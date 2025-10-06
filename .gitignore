@@ -1,0 +1,6 @@
+data/
+**/venv/
+**/.venv/
+*.7z
+*.json
+*.mbox
