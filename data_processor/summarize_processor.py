@@ -28,12 +28,13 @@ except Exception:
     OpenAI = None
     OPENAI_AVAILABLE = False
 
+from dotenv import load_dotenv
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.config import get_config
 
-
+load_dotenv()
 
 class SummarizePocessor:
     """Produces short (≈2–3 sentences) summaries.
@@ -82,15 +83,10 @@ class SummarizePocessor:
     def _load_openai(self):
         """Initialize OpenAI client."""
         try:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                os.environ["OPENAI_API_KEY"] = "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"   # visible in process; avoid committing
-                api_key = "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"
-                # self.logger.warning("OpenAI API key not found. Falling back to other methods.")
-                # self.use_openai = False
-                # return
+            api_key = os.getenv("OPENAI_API_KEY", None)
+
             self._openai_client = OpenAI(api_key=api_key)
-            self._openai_client.base_url = "https://api.openrouter.ai/api/v1"
+            self._openai_client.base_url = os.getenv("OPENAI_API_BASE_URL")
                 
             self.logger.info(f"OpenAI client initialized with model: {self.openai_model}")
         except Exception as e:
