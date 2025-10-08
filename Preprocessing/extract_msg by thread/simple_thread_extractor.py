@@ -4,10 +4,19 @@ Simplified thread data extractor with better error handling
 """
 import json
 import mailbox
-import os
 import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+
+def normalize_message_id(message_id: str) -> str:
+    """Normalize Message-ID by stripping angle brackets and surrounding whitespace"""
+    if not message_id:
+        return ""
+    mid = message_id.strip()
+    # Remove surrounding angle brackets if present
+    if mid.startswith('<') and mid.endswith('>'):
+        mid = mid[1:-1].strip()
+    return mid
 
 def create_output_directory(output_dir: str):
     """Create output directory if it doesn't exist"""
@@ -54,11 +63,12 @@ def load_emails_data(emails_file: str) -> Dict[str, Any]:
             data = json.load(f)
             
         for email in data.get('results', []):
-            message_id = email.get('message_id')
+            message_id = normalize_message_id(email.get('message_id', ''))
             if message_id:
                 emails_data[message_id] = {
                     'message_id': message_id,
-                    'thread_url': email.get('thread_url'),
+                    # Some datasets use 'thread' instead of 'thread_url'
+                    'thread_url': email.get('thread_url') or email.get('thread'),
                     'parent': email.get('parent'),
                     'children': email.get('children', []),
                     'sender_address': email.get('sender_address'),
@@ -112,7 +122,7 @@ def load_mbox_data(mbox_file: str) -> Dict[str, Any]:
             if i % 1000 == 0:
                 print(f"Processed {i} messages...")
                 
-            message_id = message.get('Message-ID', '').strip()
+            message_id = normalize_message_id(message.get('Message-ID', ''))
             if message_id:
                 content = extract_message_content(message)
                 
@@ -242,6 +252,10 @@ def process_list(list_name: str, source_dir: str, output_dir: str):
     threads_file = Path(source_dir) / "messages" / "mail_json" / f"threads_{list_name.replace('@', '_').replace('.', '_')}.json"
     emails_file = Path(source_dir) / "messages" / "mail_json" / f"emails_{list_name.replace('@', '_').replace('.', '_')}.json"
     mbox_file = Path(source_dir) / "messages" / "mbox" / f"{list_name}.mbox"
+
+    print(f"Using threads file: {threads_file}")
+    print(f"Using emails file: {emails_file}")
+    print(f"Using mbox file: {mbox_file}")
     
     # Check if files exist
     if not threads_file.exists():
