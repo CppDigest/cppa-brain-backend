@@ -1,0 +1,315 @@
+# System-wide configuration for c++ Boost Pipeline 
+
+# Test Configuration
+test_url_to_scrape: "https://www.boost.org/doc/libs/latest/doc/html/boost_asio.html"
+start_page: "templates/index.html"
+
+# Data Configuration
+data:
+  source_data: 
+    processed_data_path: "data/source_data/processed"
+    new_data_path: "data/source_data/new"
+  processed_data:
+    raw_data_path: "data/processed/raw"
+
+    chunked_data_path: "data/processed/chunked"
+    embeddings_data_path: "data/processed/embeddings"
+    graph_save_path: "data/processed/graph_cache"
+    graph_filename: "knowledge_graph.pkl"
+
+    max_count_per_file: 99
+    message_by_thread_path: "data/processed/message_by_thread"
+    message_by_thread_cache_path: "data/processed/message_by_thread_cache"
+    message_by_thread_cache_filename: "message_by_thread.pkl"
+    
+
+# Language Configuration
+language:
+  default_language: "en"
+  language_types_list: ["en", "cn", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko"]
+
+# PEFT Configuration
+peft:
+  method: "lora"
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules: ["c_attn", "c_proj"]
+  loss_type: "ForCausalLMLoss"
+  output_dir: "models/rag_model_v1"
+
+# RAG Configuration
+rag:
+   # Embedding Configuration
+  embedding:
+    embedding_types_list: ["gemma", "minilm", "nomic", "jina", "baai"]
+    default_embedding_type: "minilm"
+    gemma:
+      model_name: "google/embeddinggemma-300m"
+      model_nick_name: "gemma"
+      embedding_model_type: "sentence_transformers"  # Use sentence_transformers for offline
+      embedding_dimension: 768  # Can be adjusted from 128 to 768
+      max_tokens: 2048
+      use_quantization: true    # Enable quantization for memory efficiency
+      model_size: "303M"
+    minilm:
+      model_name: "sentence-transformers/all-MiniLM-L6-v2"
+      embedding_model_type: "sentence_transformers"  # Use sentence_transformers for offline
+      embedding_dimension: 384  # Can be adjusted from 128 to 768
+      max_tokens: 128
+      use_quantization: true    # Enable quantization for memory efficiency
+      model_size: "22.7M"
+    nomic:
+      model_name: "nomic-ai/nomic-embed-text-v2-moe"
+      embedding_model_type: "sentence_transformers"  # Use sentence_transformers for offline
+      embedding_dimension: 768  # Can be adjusted from 128 to 768
+      max_tokens: 512
+      use_quantization: true    # Enable quantization for memory efficiency
+      model_size: "475M"
+    jina:
+      model_name: "jinaai/jina-embeddings-v3"
+      embedding_model_type: "sentence_transformers"  # Use sentence_transformers for offline
+      embedding_dimension: 1024  # Can be adjusted from 128 to 768
+      max_tokens: 8192
+      use_quantization: true    # Enable quantization for memory efficiency
+      model_size: "572M"
+    baai:
+      model_name: "BAAI/bge-code-v1"
+      embedding_model_type: "sentence_transformers"  # Use sentence_transformers for offline
+      embedding_dimension: 768  # Can be adjusted from 128 to 768
+      max_tokens: 4096
+      use_quantization: true    # Enable quantization for memory efficiency
+      model_size: "1.54B"
+
+  # Database Configuration
+  database:
+    db_types_list: ["faiss", "chroma"]
+    default_db_type: "faiss"
+    faiss:
+      index_type: "IndexFlatIP"  # Inner product for cosine similarity
+      dimension: 768
+      persist_directory: "data/processed/faiss_index"
+    chroma:
+      persist_directory: "data/processed/chroma_db"
+      collection_name: "documents"
+      distance_metric: "cosine"
+    
+  # Chunking Configuration (Semantic Only)
+  chunking:
+    min_chunk_size: 100
+    max_chunk_size: 1000
+    semantic_similarity_threshold: 0.7
+    preserve_structure: true
+    chunk_file_pattern: "*_semantic_chunks.json"
+    
+    # Dynamic Windowing Configuration
+    dynamic_window_enabled: true
+    base_chunk_size: 512
+    complexity_multiplier: 1.5
+    similarity_adaptive: true
+  
+      
+  retrieval:
+    default_retrieval_type: "vector search"
+    retrieval_types_list: ["vector search", "bm25 search", "graph search", "hierarchical search"]
+    top_k: 10
+    retrieval_default_weight: {"vector search": 0.5, "bm25 search": 0.2, "graph search": 0.15, "hierarchical search": 0.15}
+    similarity_threshold: 0.7
+    
+    # Search Engine Configuration
+    search_engine:
+      engine_types_list: ["bm25", "elasticsearch"]
+      default_engine_type: "bm25"
+      bm25:
+        persist_directory: "data/processed/bm25_index"
+        k1: 1.2  # BM25 k1 parameter
+        b: 0.75  # BM25 b parameter
+      elasticsearch:
+        host: "localhost"
+        port: 9200
+        index_name: "documents"
+        mapping:
+          text: "text"
+          metadata: "object"
+          source_file: "keyword"
+          chunk_id: "keyword"
+    graph:
+      # Graph backend selection: "networkx" or "neo4j"
+      backend: "networkx"  # Change to "neo4j" to use Neo4j database
+            
+      # Neo4j configuration (only used when backend = "neo4j")
+      neo4j:
+        uri: "bolt://localhost:7687"
+        username: "neo4j"
+        password: "password"
+        database: "neo4j"  # Database name (Neo4j 4.0+)
+
+  # Summarizer Configuration
+  summarizer:
+    use_openai: true  # Use OpenAI for high-quality summarization
+    max_summary_length: 1024  # Maximum length for fallback summarization
+    openai:
+      model_name: "gpt-3.5-turbo"  # OpenAI model for summarization
+      temperature: 0.3  # Lower temperature for more consistent summaries
+      max_tokens: 150  # Maximum tokens for summary output
+    hierarchical:
+      summarization_model: "csebuetnlp/mT5_multilingual_XLSum"  # Fallback transformers model
+        
+      # NetworkX configuration (only used when backend = "networkx")
+      networkx:
+        graph_type: "DiGraph"  # "Graph" or "DiGraph"
+        persist_cache: true
+  
+  multi_step:
+    enabled: true
+    max_steps: 5
+    max_search_queries: 3
+    confidence_threshold: 0.8
+    use_self_reflection: true  # Enable self-reflection within multi-step reasoning
+  
+  # Cross-Encoder Reranker Configuration
+  reranker:
+    enabled: true
+    model_name: "Alibaba-NLP/gte-multilingual-reranker-base"
+    top_k_before_rerank: 20
+    top_k_after_rerank: 5
+  
+  summarizer:
+    model_name: "Qwen/Qwen2.5-0.5B-Instruct"
+    max_summary_length: 1024
+    summary_temperature: 0.3
+    use_specialized_summarization: true
+
+  # Chat History Configuration
+  chat_history:
+    enabled: true
+    max_length: 10
+    include_in_context: true
+    context_entries: 3
+  
+  # Context Filtering Configuration
+  context_filtering:
+    enabled: true
+    relevance_threshold: 0.6
+    redundancy_threshold: 0.8
+    max_context_length: 2000
+  
+  # LLM Integration Configuration
+  llm:
+    llm_types_list: ["gemini", "ollama", "openai", "huggingface"]
+    default_llm_type: "ollama"
+    gemini:
+      model_name: "gemini-1.5-flash"
+      temperature: 0.7
+      max_tokens: 512
+      model_max_length: 1024  # Maximum context length for the model
+    ollama:
+      model_name: "gemma3:1b"
+      temperature: 0.7
+      max_tokens: 512
+      model_max_length: 1024  # Maximum context length for the model
+    openai:
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.7
+      max_tokens: 512
+      model_max_length: 1024  # Maximum context length for the model
+    huggingface:
+      model_name: "microsoft/DialoGPT-medium"
+      temperature: 0.7
+      max_tokens: 500
+      model_max_length: 1024  # Maximum context length for the model
+    system_prompt_template: "rag_system_prompt.txt"
+    device: "auto"  # "auto", "cpu", "cuda"
+  
+  # Evaluation Configuration
+  evaluation:
+    enabled: true
+    judge_model: "gpt-4"
+    groundedness_threshold: 0.8
+    faithfulness_threshold: 0.7
+
+  # Query Interface Configuration
+  query_interface:
+    max_history: 10
+    default_mode: "standard"
+    auto_suggestions: true
+    query_modes:
+      simple:
+        use_multi_step: false
+        use_self_reflection: false
+        use_evaluation: false
+        max_sources: 3
+        verbose: false
+      standard:
+        use_multi_step: false
+        use_self_reflection: true
+        use_evaluation: false
+        max_sources: 5
+        verbose: true
+      advanced:
+        use_multi_step: true
+        use_self_reflection: true
+        use_evaluation: true
+        max_sources: 7
+        verbose: true
+      research:
+        use_multi_step: true
+        use_self_reflection: true
+        use_evaluation: true
+        max_sources: 10
+        similarity_threshold: 0.6
+        verbose: true
+
+# Training Configuration
+training:
+  batch_size: 2
+  learning_rate: 3e-4
+  num_epochs: 3
+  warmup_steps: 50
+  gradient_accumulation_steps: 4
+  max_grad_norm: 1.0
+  validation_threshold: 0.9
+  max_evaluation_samples: 10
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  workers: 1
+
+# Data Updater (Background watcher)
+data_updater:
+  enabled: true
+  poll_interval_seconds: 60
+  batch_max_files: null  # null means unlimited per cycle
+  chunk_on_change: true
+  embed_on_change: true
+  update_graph_on_change: true
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
+  file_path: "logs"
+  monitoring_metrics_file: "logs/monitoring_metrics.json"
+  retraining_history_file: "logs/retraining_history.json"
+
+# Conversation Memory Configuration
+conversation:
+  max_history_length: 10
+  session_timeout_minutes: 30
+
+# Prompt Engineering Configuration
+prompts:
+  system_prompt: "You are a helpful assistant for c++ Boost. If user ask about code, provide complete, compilable code when possible. \
+                  if user ask about documentation, provide clear, concise answers."
+  context_template: "Previous conversation:\n{context}\n\nCurrent question: {question}\n\nAnswer:"
+  rag_template: "Context from knowledge base:\n{context}\n\nPrevious conversation:\n{history}\n\nCurrent question: {question}\n\nAnswer:"
+  max_sentences: 10
+
+version:
+  version_types: ["data", "chunker","model"]
+  version_info_file: "config/version_info.json"
+
+
