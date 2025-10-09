@@ -5,6 +5,8 @@ Mail hierarchy graph built from processed mail JSON records (parent/children).
 import json
 import numpy as np
 from pathlib import Path
+from datetime import datetime, timezone
+import math
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from loguru import logger
@@ -325,7 +327,7 @@ class MailHierarchicalRAG:
     def _generate_embedding(self, text: str) -> np.ndarray:
         """Generate embedding using the embedding model."""
         try:
-            summary = text[:200] if text else ""
+            summary = text if text else ""
             if not text or len(text.strip()) < 10:
                 # Return zero vector for empty text
                 return np.zeros(768), summary  # Assuming 768-dimensional embeddings
@@ -398,6 +400,89 @@ class MailHierarchicalRAG:
         except Exception as e:
             self.logger.error(f"Failed to build vector index: {e}")
             self.vector_index = None
+
+    # -----------------------------
+    # Helper utilities to reduce duplication
+    # -----------------------------
+    def _threshold_by_top(self, results: List[RetrievalResult], ratio: float) -> List[RetrievalResult]:
+        """Filter results keeping those with score >= ratio * top_score. Returns new list."""
+        if not results:
+            return []
+        try:
+            top_score = max(r.score for r in results)
+            threshold = top_score * ratio
+            return [r for r in results if r.score >= threshold]
+        except Exception:
+            return results
+
+    def _apply_recency(self, results: List[RetrievalResult], *, alpha: float = 0.7, beta: float = 0.3,
+                        accumulate: bool = False, prev_scale: float = 1.0, add_scale: float = 1.0) -> None:
+        """Apply recency-aware reweighting.
+        - alpha/beta control blend of relevance and recency: score * (alpha + beta * recency_weight)
+        - if accumulate, mix with existing gen_score using prev_scale; then add add_scale * new contribution
+        Writes to r.gen_score.
+        """
+        for r in results:
+            try:
+                rec = self._compute_recency_weight(r.metadata)
+                base = (getattr(r, 'gen_score', 0.0) * prev_scale) if accumulate else 0.0
+                r.gen_score = base + (r.score * (alpha + beta * rec) * add_scale)
+            except Exception:
+                # Fallback: keep previous gen_score if exists, else mirror raw score
+                if not hasattr(r, 'gen_score'):
+                    r.gen_score = r.score
+
+    def _normalize_vector(self, vec: Any) -> Optional[np.ndarray]:
+        """Convert to float32 numpy array and L2-normalize. Return None if invalid or zero-norm."""
+        try:
+            if vec is None:
+                return None
+            if isinstance(vec, list):
+                arr = np.array(vec, dtype=np.float32)
+            elif isinstance(vec, np.ndarray):
+                arr = vec.astype('float32', copy=False)
+            else:
+                # Unknown type (e.g., torch.Tensor) - attempt numpy conversion
+                arr = np.array(vec, dtype=np.float32)
+            norm = np.linalg.norm(arr)
+            if norm == 0 or not np.isfinite(norm):
+                return None
+            return arr / norm
+        except Exception:
+            return None
+
+    def _get_normalized_node_vector(self, node_id: str) -> Optional[np.ndarray]:
+        """Fetch node embedding and return L2-normalized vector, or None if missing/invalid."""
+        emb = self.node_embeddings.get(node_id)
+        return self._normalize_vector(emb)
+
+    def _finalize_results(self, results: List[RetrievalResult], *,
+                           threshold_ratio: Optional[float] = None,
+                           recency: bool = True,
+                           accumulate: bool = False,
+                           prev_scale: float = 1.0,
+                           add_scale: float = 1.0,
+                           do_sort: bool = False,
+                           limit: Optional[int] = None) -> List[RetrievalResult]:
+        """Shared tail-processing for search results.
+        - Optionally threshold by top score.
+        - Optionally apply recency reweighting (writes gen_score).
+        - Optionally sort by gen_score (fallback to score if missing).
+        - Optionally slice to limit.
+        """
+        if not results:
+            return []
+        processed = results
+        if threshold_ratio is not None:
+            processed = self._threshold_by_top(processed, ratio=threshold_ratio)
+        if recency:
+            self._apply_recency(processed, alpha=0.7, beta=0.3,
+                                accumulate=accumulate, prev_scale=prev_scale, add_scale=add_scale)
+        if do_sort:
+            processed.sort(key=lambda x: getattr(x, 'gen_score', getattr(x, 'score', 0.0)), reverse=True)
+        if limit is not None:
+            return processed[:limit]
+        return processed
 
     def update_message_by_node(self, node_id: str, content: Dict[str, Any]) -> bool:
         """Update an existing message node in the graph."""
@@ -908,12 +993,14 @@ class MailHierarchicalRAG:
             
             # Normalize query embedding for cosine similarity
             faiss.normalize_L2(query_embedding)
-            
+
             # Search in FAISS index
-            scores, indices = self.vector_index.search(query_embedding, max_results * 2)  # Get more results for filtering
-            
-            results = []
+            scores, indices = self.vector_index.search(query_embedding, max(max_results*100, int(len(filtered_nodes)/2)))  # Get more results for filtering
+            threshold = scores[0][0] * 0.8
+            results: List[RetrievalResult] = []
             for score, idx in zip(scores[0], indices[0]):
+                if score < threshold:
+                    break
                 if idx == -1:  # Invalid index
                     continue
                     
@@ -939,9 +1026,14 @@ class MailHierarchicalRAG:
                     retrieval_method = 'hierarchical_semantic',
                     source_type = "email",
                     source_file = node_data.get('url', ''),
+                    node_id = node_id,
                 ))
-            
-            return results[:max_results]
+                
+            if not results:
+                return []
+            # Recency reweighting (create gen_score)
+            self._apply_recency(results, alpha=0.7, beta=0.3, accumulate=False)
+            return results
             
         except Exception as e:
             self.logger.error(f"Semantic search failed: {e}")
@@ -950,7 +1042,7 @@ class MailHierarchicalRAG:
     def _keyword_search(self, query: str, filtered_nodes: List[str], max_results: int) -> List[RetrievalResult]:
         """Perform keyword-based search."""
         query_terms = query.lower().split()
-        results = []
+        results: List[RetrievalResult] = []
         
         for node_id in filtered_nodes:
             node_data = self.graph.nodes[node_id]
@@ -977,20 +1069,38 @@ class MailHierarchicalRAG:
                 retrieval_method = 'hierarchical_keyword',
                 source_type = "email",
                 source_file = node_data.get('url', ''),
+                node_id = node_id,
             ))
         
-        return results[:max_results]
+        
+        # filtered.sort(key=lambda x: x.score, reverse=True)
+        return self._finalize_results(results, threshold_ratio=0.8, recency=True, accumulate=False, prev_scale=1.0, add_scale=0.3)
 
     def _graph_search(self, query: str, filtered_nodes: List[str], max_results: int) -> List[RetrievalResult]:
-        """Perform graph traversal-based search."""
-        query_terms = query.lower().split()
-        results = []
+        """Perform graph-based search using embedding similarity over a node and its neighbors."""
+        try:
+            # Build query embedding
+            query_embedding = self.embedder.encode(query)
+            if query_embedding is None:
+                return []
+            if isinstance(query_embedding, list):
+                query_embedding = np.array(query_embedding, dtype=np.float32)
+            else:
+                query_embedding = query_embedding.astype('float32')
+            # Normalize for cosine similarity
+            q_norm = np.linalg.norm(query_embedding)
+            if q_norm == 0:
+                return []
+        except Exception as e:
+            self.logger.warning(f"Failed to build query embedding for graph search: {e}")
+            return []
+        results: List[RetrievalResult] = []
         
         for node_id in filtered_nodes:
             node_data = self.graph.nodes[node_id]
             
-            # Calculate graph-based relevance
-            graph_score = self._calculate_graph_relevance(node_id, query_terms)
+            # Calculate graph-based relevance using embedding similarity synthesis
+            graph_score = self._calculate_graph_relevance(node_id, query_embedding)
             
             if graph_score > 0:
                 results.append(RetrievalResult(
@@ -1000,46 +1110,76 @@ class MailHierarchicalRAG:
                     metadata = node_data,
                     source_type = "email",
                     source_file = node_data.get('url', ''),
+                    node_id = node_id,
                 ))
         
-        return results[:max_results]
+        # Stage 1: thresholding by top raw score
+        if not results:
+            return []
+        
+        return self._finalize_results(results, threshold_ratio=0.7, recency=True, accumulate=False, prev_scale=1.0, add_scale=0.3)
 
     def _hybrid_search(self, query: str, filtered_nodes: List[str], max_results: int) -> List[RetrievalResult]:
         """Perform hybrid search combining multiple methods."""
         # Get results from different search methods
         semantic_results = self._semantic_search(query, filtered_nodes, max_results)
+        filtered_nodes = [r.node_id for r in semantic_results]
         keyword_results = self._keyword_search(query, filtered_nodes, max_results)
-        graph_results = []
-        # graph_results = self._graph_search(query, filtered_nodes, max_results)
+        filtered_nodes = [r.node_id for r in keyword_results]
+        graph_results = self._graph_search(query, filtered_nodes, max_results)
+        filtered_nodes = [r.node_id for r in graph_results]
         
-        # Combine and deduplicate results
-        combined_results = {}
+        graph_results.sort(key=lambda x: x.gen_score, reverse=True)
         
-        # Add semantic results with high weight
-        for result in semantic_results:
-            node_id = result.metadata['message_id']
-            result.score = result.score * 0.4
-            combined_results[node_id] = result
-        
-        # Add keyword results
-        for result in keyword_results:
-            node_id = result.metadata['message_id']
-            if node_id in combined_results:
-                combined_results[node_id].score += result.score * 0.3
-            else:
-                combined_results[node_id] = result
-                combined_results[node_id].score = result.score * 0.3
-        
-        # Add graph results
-        for result in graph_results:
-            node_id = result.metadata['message_id']
-            if node_id in combined_results:
-                combined_results[node_id].score += result.score * 0.3
-            else:
-                combined_results[node_id] = result
-                combined_results[node_id].score = result.score * 0.3
-        
-        return list(combined_results.values())
+        return graph_results[:max_results]
+
+    def _compute_recency_weight(self, node_data: Dict[str, Any]) -> float:
+        """Compute a recency weight in (0, 1], favoring recent dates.
+        Uses exponential decay with configurable half-life (default 180 days).
+        Returns 1.0 if no date available or parsing fails.
+        """
+        try:
+            date_str = node_data.get('date') or node_data.get('date_active') or ''
+            if not date_str:
+                return 1.0
+            dt = None
+            s = date_str.strip()
+            # Try ISO formats
+            try:
+                if s.endswith('Z'):
+                    s = s.replace('Z', '+00:00')
+                dt = datetime.fromisoformat(s)
+            except Exception:
+                dt = None
+            # Try common email/date formats
+            if dt is None:
+                fmts = [
+                    '%a, %d %b %Y %H:%M:%S %z',  # RFC 2822
+                    '%Y-%m-%d %H:%M:%S',
+                    '%Y-%m-%d',
+                ]
+                for fmt in fmts:
+                    try:
+                        dt = datetime.strptime(date_str, fmt)
+                        break
+                    except Exception:
+                        continue
+            if dt is None:
+                return 1.0
+            # Normalize to UTC if naive
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+            half_life = float(get_config('rag.retrieval.mail.recency_half_life_days', 1800))
+            if half_life <= 0:
+                half_life = 180.0
+            # Exponential decay: weight=exp(-age/half_life)
+            weight = math.exp(-age_days / half_life)
+            # Clamp to avoid zeroing out older but relevant content
+            return max(0.1, min(1.0, weight))
+        except Exception:
+            return 1.0
 
     def _create_node_text(self, node_data: Dict[str, Any]) -> str:
         """Create searchable text from node data."""
@@ -1051,39 +1191,48 @@ class MailHierarchicalRAG:
         if node_data.get('summary'):
             text_parts.append(f"summary: {node_data['summary']}")
         
-        if node_data.get('sender'):
+        if node_data.get('sender_address'):
             text_parts.append(f"from: {node_data['sender_address']}")
         
         return '\n'.join(text_parts)
 
-    def _calculate_graph_relevance(self, node_id: str, query_terms: List[str]) -> float:
-        """Calculate graph-based relevance score."""
+    def _calculate_graph_relevance(self, node_id: str, query_embedding: np.ndarray) -> float:
+        """Calculate graph-based relevance by synthesizing cosine similarity over a node and its neighbors.
+
+        Strategy:
+        - Compute cosine similarity between query embedding and the current node's embedding.
+        - Compute cosine similarity for all immediate neighbors (predecessors and successors).
+        - Aggregate as a weighted combination: 0.6 * sim(node) + 0.4 * mean(sim(neighbors)).
+          If no neighbors, return node similarity. If no embedding, return 0.
+        """
         try:
-            # Get node centrality
-            centrality = nx.degree_centrality(self.graph).get(node_id, 0)
-            
-            # Get connected nodes that match query
-            connected_matches = 0
-            total_connections = len(list(self.graph.neighbors(node_id)))
-            
-            for neighbor in self.graph.neighbors(node_id):
-                neighbor_data = self.graph.nodes[neighbor]
-                neighbor_text = self._create_node_text(neighbor_data).lower()
-                
-                if any(term in neighbor_text for term in query_terms):
-                    connected_matches += 1
-            
-            # Calculate relevance based on centrality and connected matches
-            if total_connections > 0:
-                connection_score = connected_matches / total_connections
+            # Normalize inputs
+            q_vec = self._normalize_vector(query_embedding)
+            if q_vec is None:
+                return 0.0
+            node_vec = self._get_normalized_node_vector(node_id)
+            if node_vec is None:
+                return 0.0
+            node_sim = float(np.dot(node_vec, q_vec))
+
+            # Neighbor embeddings (both directions)
+            neighbors = list(self.graph.predecessors(node_id)) + list(self.graph.successors(node_id))
+            sims = []
+            for nb in neighbors:
+                nb_vec = self._get_normalized_node_vector(nb)
+                if nb_vec is None:
+                    continue
+                sims.append(float(np.dot(nb_vec, q_vec)))
+
+            if sims:
+                agg = 0.6 * node_sim + 0.4 * (sum(sims) / len(sims))
             else:
-                connection_score = 0
-            
-            return (centrality * 0.5) + (connection_score * 0.5)
-            
+                agg = node_sim
+            # Clamp to [0, 1] since cosine could be negative; we prefer non-negative relevance
+            return max(0.0, min(1.0, agg))
         except Exception as e:
             self.logger.warning(f"Error calculating graph relevance: {e}")
-            return 0
+            return 0.0
 
     def _get_graph_metrics(self, node_id: str) -> Dict[str, Any]:
         """Get graph metrics for a node."""
