@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from loguru import logger
+from pathlib import Path
 
 
 # Add project root to path
@@ -21,7 +22,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from main_pipeline import ImprovedBoostPipeline
 from rag.improved_rag_system import RAGSystem, SearchRequest, SearchMethod, SearchScope
 from utils.config import get_config
-from .chat_history_manager import chat_manager, ChatMessage
+from chat_history_manager import chat_manager, ChatMessage
 
 
 # Pydantic models for API requests/responses
@@ -301,6 +302,107 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to initialize pipelines: {e}")
         raise
+
+@app.get("/doc/fulltext")
+async def get_document_fulltext(path: str, language: str = None):
+    """Return full text for a processed document by relative source path.
+    Looks under data/source_data/processed/{lang}/.
+    """
+    try:
+        lang = language or get_config("language.default_language", "en")
+        base = Path(get_config("data.source_data.processed_data_path", "data/source_data/processed")) / lang
+        # path comes like 'asio/scraped/boost_asio/overview.md'
+        safe_path = Path(path.replace("\\", "/"))
+        full_path = (base / safe_path).resolve()
+        if base.resolve() not in full_path.parents and base.resolve() != full_path.parent.resolve():
+            raise HTTPException(status_code=400, detail="Invalid path")
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        return {"path": str(safe_path), "content": full_path.read_text(encoding="utf-8", errors="ignore")}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reading fulltext: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/index/processed", response_model=Dict[str, Any])
+async def index_processed(language: str = None, max_files: int = None):
+    """Index documents from data/source_data/processed/{lang} and load into RAG.
+    - Runs semantic chunking over processed corpus (non-destructive)
+    - Loads chunks into vector/BM25/graph indices
+    """
+    try:
+        if main_pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipelines not initialized")
+        lang = language or get_config("language.default_language", "en")
+        # Run chunking using processed input dir
+        processed_dir = Path(get_config("data.source_data.processed_data_path", "data/source_data/processed")) / lang
+        if not processed_dir.exists():
+            raise HTTPException(status_code=404, detail=f"Processed directory not found: {processed_dir}")
+        # Access semantic_chunker via orchestrator's data processor
+        chunker = main_pipeline.orchestrator.data_processor.semantic_chunker
+        success, chunk_files = chunker.process_knowledge_base(
+            raw_file_list=None,
+            max_files=max_files,
+            input_dir=str(processed_dir)
+        )
+        if not success:
+            raise HTTPException(status_code=500, detail="Chunking failed")
+        # Load data into RAG system
+        loaded = main_pipeline.orchestrator.rag_manager.rag_system.load_data(
+            chunk_files=[str(p) for p in chunk_files]
+        )
+        if not loaded:
+            raise HTTPException(status_code=500, detail="Failed to load data into RAG system")
+        return {
+            "message": "Indexing completed",
+            "language": lang,
+            "chunk_files": [str(p) for p in chunk_files],
+            "total_chunk_files": len(chunk_files)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error indexing processed data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/mail/message")
+async def get_mail_message(url: str = None, message_id: str = None):
+    """Return detailed mail message fields by URL or message_id (hash).
+    Requires the mail hierarchy graph to be loaded in memory.
+    """
+    try:
+        if rag_system is None or rag_system.graph_manager is None or rag_system.graph_manager.mail_hierarchy is None:
+            raise HTTPException(status_code=503, detail="Mail hierarchy not available")
+        mh = rag_system.graph_manager.mail_hierarchy
+        # Build lookup by url or by node id
+        node_id = None
+        if message_id and message_id in mh.graph:
+            node_id = message_id
+        elif url:
+            for n in mh.graph.nodes:
+                if mh.graph.nodes[n].get("url") == url:
+                    node_id = n
+                    break
+        if not node_id:
+            raise HTTPException(status_code=404, detail="Message not found")
+        data = mh.graph.nodes[node_id]
+        return {
+            "message_id": data.get("message_id"),
+            "sender_address": data.get("sender_address") or data.get("from"),
+            "date": data.get("date"),
+            "to": data.get("to"),
+            "cc": data.get("cc"),
+            "reply_to": data.get("reply_to"),
+            "subject": data.get("subject"),
+            "url": data.get("url"),
+            "content": mh._create_node_text(data)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching mail message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/set_pipeline")
 async def set_pipeline(rag_setting: RagSettingRequest):
@@ -765,14 +867,16 @@ async def query_system(request: QueryRequest):
         # Perform search
         search_response = rag_system.orchestrator.search(search_request)
         
-        # Prepare retrieval results for display
+        # Prepare retrieval results for display (include metadata & type)
         retrieval_results = []
         for result in search_response.results:
             retrieval_results.append({
-                "text": result.text,
-                "source_file": result.source_file,
-                "score": result.score,
-                "retrieval_method": result.retrieval_method
+                "text": getattr(result, 'text', ''),
+                "source_file": getattr(result, 'source_file', ''),
+                "score": getattr(result, 'score', None),
+                "retrieval_method": getattr(result, 'retrieval_method', ''),
+                "source_type": getattr(result, 'source_type', ''),
+                "metadata": getattr(result, 'metadata', {})
             })
         
         # Get RAG answer generator
@@ -1476,25 +1580,3 @@ async def create_email_thread(request: EmailThreadRequest):
                 "timestamp": datetime.now().isoformat()
             }
         )
-
-
-def run_api():
-    import uvicorn
-    
-    # Get configuration
-    host = get_config("api.host", "0.0.0.0")
-    port = get_config("api.port", 8000)
-    debug = get_config("api.debug", False)
-    workers = get_config("api.workers", 1)
-    
-    # Configure logging
-    logger.add("logs/api.log", rotation="10 MB", level="INFO")
-    
-    # Run the API
-    uvicorn.run(
-        "api:app",
-        host=host,
-        port=port,
-        reload=debug,
-        workers=workers if not debug else 1
-    )
