@@ -14,7 +14,7 @@ data:
 
     chunked_data_path: "data/processed/chunked"
     embeddings_data_path: "data/processed/embeddings"
-    graph_save_path: "data/processed/graph_cache"
+    graph_data_path: "data/processed/graph"
     graph_filename: "knowledge_graph.pkl"
 
     max_count_per_file: 99
@@ -40,10 +40,14 @@ peft:
 
 # RAG Configuration
 rag:
-   # Embedding Configuration
+   # Embedding Configuration (Improvement #1: Tunable Embeddings)
   embedding:
     embedding_types_list: ["gemma", "minilm", "nomic", "jina", "baai"]
     default_embedding_type: "minilm"
+    # A/B Testing support
+    enable_ab_testing: true
+    # Fine-tuning paths
+    fine_tuned_models_dir: "models/fine_tuned_embeddings"
     gemma:
       model_name: "google/embeddinggemma-300m"
       model_nick_name: "gemma"
@@ -74,21 +78,65 @@ rag:
       use_quantization: true    # Enable quantization for memory efficiency
       model_size: "572M"
     baai:
-      model_name: "BAAI/bge-code-v1"
+      model_name: "BAAI/bge-m3"
       embedding_model_type: "sentence_transformers"  # Use sentence_transformers for offline
       embedding_dimension: 768  # Can be adjusted from 128 to 768
       max_tokens: 4096
       use_quantization: true    # Enable quantization for memory efficiency
       model_size: "1.54B"
 
-  # Database Configuration
+  # LLM Integration Configuration
+  llm:
+    llm_types_list: ["gemini", "ollama", "openai", "huggingface", "transformer"]
+    default_llm_type: "ollama"
+    gemini:
+      model_name: "gemini-1.5-flash"
+      temperature: 0.7
+      max_tokens: 512
+      model_max_length: 1024  # Maximum context length for the model
+    ollama:
+      model_name: "gemma3:1b"
+      temperature: 0.7
+      max_tokens: 512
+      model_max_length: 1024  # Maximum context length for the model
+    openai:
+      model_name: "gpt-3.5-turbo"
+      temperature: 0.7
+      max_tokens: 512
+      model_max_length: 1024  # Maximum context length for the model
+    huggingface:
+      model_name: "microsoft/DialoGPT-medium"
+      temperature: 0.7
+      max_tokens: 500
+      model_max_length: 1024  # Maximum context length for the model
+    transformer:
+      model_name: "google/gemma-3-1b-it" # "deepseek-ai/deepseek-coder-1.3b-instruct"
+      temperature: 0.7
+      max_tokens: 256
+      model_max_length: 8192  # Maximum context length for the model
+      max_length: 896  # Maximum sequence length for generation
+      top_p: 0.9  # Nucleus sampling parameter
+      top_k: 50  # Top-k sampling parameter
+      use_cache: true  # Use KV cache for efficiency
+    system_prompt_template: "rag_system_prompt.txt"
+    device: "auto"  # "auto", "cpu", "cuda"
+  # Database Configuration (Improvement #2: Advanced FAISS Indexing)
   database:
     db_types_list: ["faiss", "chroma"]
     default_db_type: "faiss"
     faiss:
-      index_type: "IndexFlatIP"  # Inner product for cosine similarity
+      index_type: "IndexFlatIP"  # Options: IndexFlatIP, IVF, IVFPQ, HNSW, HNSWPQ
       dimension: 768
       persist_directory: "data/processed/faiss_index"
+      # IVF parameters
+      ivf_nlist: 100  # Number of clusters for IVF
+      # Product Quantization parameters
+      pq_m: 8  # Number of sub-vectors
+      pq_nbits: 8  # Bits per sub-vector
+      # HNSW parameters
+      hnsw_m: 32  # Number of connections per layer
+      hnsw_efConstruction: 40  # Size of dynamic candidate list during construction
+      hnsw_efSearch: 16  # Size of dynamic candidate list during search
     chroma:
       persist_directory: "data/processed/chroma_db"
       collection_name: "documents"
@@ -116,6 +164,49 @@ rag:
     retrieval_default_weight: {"vector search": 0.5, "bm25 search": 0.2, "graph search": 0.15, "hierarchical search": 0.15}
     similarity_threshold: 0.7
     
+    # Multi-Query Expansion (Improvement #3: RAG-Fusion)
+    multi_query:
+      enabled: true
+      num_paraphrases: 3
+    prf:
+      enabled: true  # Pseudo-Relevance Feedback
+      top_n: 3
+      num_terms: 5
+    
+    # Learning-to-Rank Fusion (Improvement #4)
+    fusion:
+      mode: "fixed"  # Options: fixed, ltr (learning-to-rank)
+      model_path: "models/ltr_fusion_model.joblib"
+    
+    # Score Calibration (Improvement #9)
+    calibration:
+      enabled: true
+      mode: "zscore"  # Options: zscore, minmax, softmax, percentile
+      temperature: 1.0
+    
+    # Diversity & MMR (Improvement #5 & #14)
+    diversity:
+      mmr:
+        enabled: true
+        lambda: 0.5  # Balance between relevance (1.0) and diversity (0.0)
+      deduplication:
+        enabled: true
+        similarity_threshold: 0.95
+      source_diversity:
+        enabled: true
+        max_per_source: 3
+    
+    # Query Intent Routing (Improvement #13)
+    intent_routing:
+      enabled: true
+      use_llm: false  # Use LLM for classification if available
+    
+    # Metadata Filtering (Improvement #10)
+    metadata_filtering:
+      enabled: true
+      fielded_search: true  # Support field:value syntax
+      implicit_extraction: true  # Extract implicit constraints from query
+    
     # Search Engine Configuration
     search_engine:
       engine_types_list: ["bm25", "elasticsearch"]
@@ -136,6 +227,16 @@ rag:
     graph:
       # Graph backend selection: "networkx" or "neo4j"
       backend: "networkx"  # Change to "neo4j" to use Neo4j database
+      
+      # Graph Retrieval Enhancements (Improvement #7)
+      max_hops: 2  # Maximum hops for neighbor retrieval
+      hop_decay: 0.6  # Score decay per hop
+      personalized_pagerank: true  # Use PPR for ranking
+      edge_priors:
+        reply: 1.0
+        same_thread: 0.7
+        reference: 0.5
+        similar: 0.3
             
       # Neo4j configuration (only used when backend = "neo4j")
       neo4j:
@@ -152,13 +253,12 @@ rag:
       model_name: "gpt-3.5-turbo"  # OpenAI model for summarization
       temperature: 0.3  # Lower temperature for more consistent summaries
       max_tokens: 150  # Maximum tokens for summary output
-    hierarchical:
-      summarization_model: "csebuetnlp/mT5_multilingual_XLSum"  # Fallback transformers model
+    model_name: "csebuetnlp/mT5_multilingual_XLSum"  # Fallback transformers model
         
       # NetworkX configuration (only used when backend = "networkx")
-      networkx:
-        graph_type: "DiGraph"  # "Graph" or "DiGraph"
-        persist_cache: true
+  networkx:
+    graph_type: "DiGraph"  # "Graph" or "DiGraph"
+    persist_cache: true
   
   multi_step:
     enabled: true
@@ -167,12 +267,34 @@ rag:
     confidence_threshold: 0.8
     use_self_reflection: true  # Enable self-reflection within multi-step reasoning
   
-  # Cross-Encoder Reranker Configuration
+  # Cross-Encoder Reranker Configuration (Improvement #5: Stronger Reranker)
   reranker:
     enabled: true
-    model_name: "Alibaba-NLP/gte-multilingual-reranker-base"
+    model_name: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # Alternative stronger models:
+    # - "BAAI/bge-reranker-large"
+    # - "castorini/monot5-base-msmarco"
+    # - "Alibaba-NLP/gte-multilingual-reranker-base"
     top_k_before_rerank: 20
     top_k_after_rerank: 5
+    
+    # ColBERT Late Interaction (Improvement #12)
+    colbert_enabled: false  # Enable for code-heavy queries
+    colbert_model: "colbert-ir/colbertv2.0"
+    colbert_for_code_only: true  # Only use ColBERT for code queries
+    colbert_max_latency_ms: 300  # Maximum acceptable latency
+    cross_encoder_k: 20  # First stage: cross-encoder top-k
+    colbert_k: 5  # Second stage: ColBERT top-k
+  
+  # Authority & Time Priors (Improvement #8)
+  retrieval:
+    mail:
+      sender_prior:
+        enabled: true
+        max_weight: 0.2  # Maximum boost from sender authority
+      thread_activity:
+        enabled: true
+        weight: 0.15
   
   summarizer:
     model_name: "Qwen/Qwen2.5-0.5B-Instruct"
@@ -193,33 +315,6 @@ rag:
     relevance_threshold: 0.6
     redundancy_threshold: 0.8
     max_context_length: 2000
-  
-  # LLM Integration Configuration
-  llm:
-    llm_types_list: ["gemini", "ollama", "openai", "huggingface"]
-    default_llm_type: "ollama"
-    gemini:
-      model_name: "gemini-1.5-flash"
-      temperature: 0.7
-      max_tokens: 512
-      model_max_length: 1024  # Maximum context length for the model
-    ollama:
-      model_name: "gemma3:1b"
-      temperature: 0.7
-      max_tokens: 512
-      model_max_length: 1024  # Maximum context length for the model
-    openai:
-      model_name: "gpt-3.5-turbo"
-      temperature: 0.7
-      max_tokens: 512
-      model_max_length: 1024  # Maximum context length for the model
-    huggingface:
-      model_name: "microsoft/DialoGPT-medium"
-      temperature: 0.7
-      max_tokens: 500
-      model_max_length: 1024  # Maximum context length for the model
-    system_prompt_template: "rag_system_prompt.txt"
-    device: "auto"  # "auto", "cpu", "cuda"
   
   # Evaluation Configuration
   evaluation:
@@ -260,6 +355,22 @@ rag:
         similarity_threshold: 0.6
         verbose: true
 
+# Caching & Telemetry (Improvement #11)
+cache:
+  enabled: true
+  directory: "data/cache"
+  ttl_seconds: 3600  # 1 hour cache TTL
+  cache_embeddings: true
+  cache_results: true
+  cache_reranked: true
+
+monitoring:
+  log_performance: true  # Log per-stage performance metrics
+  track_recall: true  # Track Recall@k per stage
+  telemetry_enabled: true
+  latency_tracking: true
+  cache_hit_tracking: true
+
 # Training Configuration
 training:
   batch_size: 2
@@ -274,7 +385,7 @@ training:
 # API Configuration
 api:
   host: "0.0.0.0"
-  port: 8000
+  port: 8080
   debug: false
   workers: 1
 
@@ -294,6 +405,8 @@ logging:
   file_path: "logs"
   monitoring_metrics_file: "logs/monitoring_metrics.json"
   retraining_history_file: "logs/retraining_history.json"
+
+  
 
 # Conversation Memory Configuration
 conversation:

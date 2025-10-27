@@ -1,0 +1,86 @@
+# Configuration for RAG Caching and Telemetry System
+# Add these sections to your main config.yaml file
+
+# Cache configuration
+rag:
+  cache:
+    directory: "data/cache"
+    ttl_seconds: 3600  # 1 hour default TTL
+    max_memory_entries: 1000
+    enable_disk_persistence: true
+    
+  # Telemetry configuration
+  telemetry:
+    enabled: true
+    log_file: "logs/monitoring_metrics.json"
+    track_stages: true
+    track_retrieval_metrics: true
+    track_latency_percentiles: [50, 95, 99]
+    
+  # Performance monitoring
+  monitoring:
+    enable_query_tracking: true
+    enable_stage_timing: true
+    enable_cache_analytics: true
+    performance_report_interval: 100  # queries
+
+# Logging configuration for telemetry
+logging:
+  monitoring_metrics_file: "logs/monitoring_metrics.json"
+  cache_log_file: "logs/cache_operations.log"
+  telemetry_log_level: "INFO"
+  
+  # Structured logging for metrics
+  metrics:
+    format: "json"
+    rotation: "10 MB"
+    retention: "7 days"
+
+# Database configuration for persistent caching
+database:
+  cache:
+    type: "sqlite"  # or "postgresql", "mysql"
+    connection_string: "sqlite:///data/cache.db"
+    table_name: "query_cache"
+    enable_compression: true
+    
+# Advanced caching strategies
+cache_strategies:
+  # Query-based caching
+  query_cache:
+    enabled: true
+    strategy: "lru"  # lru, ttl, size_based
+    max_size: 10000
+    compression: true
+    
+  # Embedding cache
+  embedding_cache:
+    enabled: true
+    max_embeddings: 5000
+    ttl_hours: 24
+    
+  # Result cache
+  result_cache:
+    enabled: true
+    max_results: 1000
+    ttl_minutes: 30
+
+# Telemetry aggregation settings
+telemetry:
+  aggregation:
+    window_size_minutes: 5
+    batch_size: 100
+    flush_interval_seconds: 30
+    
+  # Metrics to track
+  metrics:
+    - "query_latency"
+    - "cache_hit_rate"
+    - "retrieval_accuracy"
+    - "system_throughput"
+    
+  # Alerting thresholds
+  alerts:
+    high_latency_threshold_ms: 5000
+    low_cache_hit_rate_threshold: 0.3
+    error_rate_threshold: 0.1
