@@ -32,6 +32,7 @@ class LangChainHybridRetriever:
         sparse_top_k: int = 50,
         final_top_k: int = 50,
         force_reindex: bool = False,
+        half_life: int = 1500,
     ):
         self.documents = []
         self.embedding_model_name = embedding_model
@@ -43,6 +44,7 @@ class LangChainHybridRetriever:
         self.logger = logger.bind(name="LangChainHybridRetriever")
         self.vector_store = None
         self.dense_retriever = None
+        self.half_life = half_life
         # Initialize components
         try:
             self._setup_embedding_model()
@@ -380,7 +382,7 @@ class LangChainHybridRetriever:
 
             # Combine original score with TF-IDF similarity
             original_score = doc.metadata.get("ensemble_score", 0.0)
-            final_score = 0.7 * original_score + 0.3 * similarity
+            final_score = 0.9 * original_score + 0.1 * similarity
 
             # Add time exponential bonus for mail documents 0~1.0
             if doc.metadata.get("type") == "mail" and "date" in doc.metadata:
@@ -450,8 +452,7 @@ class LangChainHybridRetriever:
             # decay_rate = 0.002  # Adjust this to control decay speed
             # time_bonus = math.exp(-decay_rate * days_ago)
             
-            half_life = 1800
-            time_bonus = math.exp(-days_ago / half_life)
+            time_bonus = math.exp(-days_ago / self.half_life)
             
             time_bonus = max(0.1, min(1.0, time_bonus))
             

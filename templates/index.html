@@ -15,9 +15,10 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            height: 100vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
         }
 
         .header {
@@ -25,6 +26,7 @@
             backdrop-filter: blur(10px);
             padding: 1rem 2rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
         }
 
         .header h1 {
@@ -45,26 +47,25 @@
         .main-container {
             flex: 1;
             display: flex;
-            height: calc(100vh - 200px);
-            margin: 0 10px;
-            width: 100%;
-            padding: 1rem;
-            padding-bottom: 120px;
             gap: 1rem;
+            padding: 1rem;
+            overflow: hidden;
+            min-height: 0;
         }
 
         .channels-sidebar {
             width: 250px;
+            min-width: 250px;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 20px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            height: 100%;
         }
 
         .chat-container {
-            width: 1200px;
             flex: 1;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 20px;
@@ -73,10 +74,12 @@
             flex-direction: column;
             overflow: hidden;
             min-width: 0;
+            height: 100%;
         }
 
         .settings-panel {
             width: 250px;
+            min-width: 250px;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 20px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
@@ -84,6 +87,7 @@
             flex-direction: column;
             overflow: hidden;
             transition: transform 0.3s ease;
+            height: 100%;
         }
 
         .settings-panel.hidden {
@@ -98,6 +102,7 @@
             color: white;
             padding: 1.5rem;
             text-align: center;
+            flex-shrink: 0;
         }
 
         .channels-header h2 {
@@ -129,6 +134,7 @@
             border-radius: 15px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
             overflow: hidden;
+            flex-shrink: 0;
         }
 
         .example-questions-header {
@@ -165,7 +171,7 @@
 
         .example-questions-content {
             max-height: 500px;
-            overflow-y: auto;
+            overflow-y: hidden;
             transition: max-height 0.3s ease, opacity 0.3s ease;
             opacity: 1;
         }
@@ -179,7 +185,8 @@
         .channels-list {
             flex: 1;
             padding: 1rem;
-            overflow-y: auto;
+            overflow-y: hidden;
+            min-height: 0;
         }
 
         .channel-item {
@@ -247,6 +254,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
 
         .chat-header h2 {
@@ -308,11 +316,14 @@
         .chat-messages {
             flex: 1;
             padding: 2rem;
+            padding-bottom: 1rem;
             overflow-y: auto;
+            overflow-x: hidden;
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
             scroll-behavior: smooth;
+            min-height: 0;
         }
 
         .message {
@@ -459,14 +470,7 @@
             padding: 1.5rem;
             background: #f8fafc;
             border-top: 1px solid #e5e7eb;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 1000;
-            max-width: 1400px;
-            margin: 0 auto;
-            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
         }
 
         .chat-input-wrapper {
@@ -476,63 +480,7 @@
             position: relative;
         }
 
-        .mode-selector {
-            position: absolute;
-            top: -3rem;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 0.5rem;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 20px;
-            padding: 0.25rem;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .mode-option {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            padding: 0.5rem 1rem;
-            border-radius: 15px;
-            background: transparent;
-            border: 2px solid transparent;
-            transition: all 0.3s ease;
-            user-select: none;
-        }
-
-        .mode-option:hover {
-            background: rgba(255, 255, 255, 0.8);
-            transform: translateY(-1px);
-        }
-
-        .mode-option input[type="radio"] {
-            display: none;
-        }
-
-        .mode-option:has(input[type="radio"]:checked) {
-            background: rgba(102, 126, 234, 0.1);
-            border-color: #667eea;
-        }
-
-        .mode-option input[type="radio"]:checked+.mode-label {
-            color: #667eea;
-            font-weight: 600;
-        }
-
-        .mode-label {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.9rem;
-            color: #666;
-            transition: all 0.3s ease;
-        }
-
-        .mode-icon {
-            font-size: 1.1rem;
-        }
+        /* Mode selector removed - LangChain RAG only uses query mode */
 
         .search-results {
             margin: 1rem 0;
@@ -780,8 +728,9 @@
 
         .settings-panel-content {
             padding: 0.5rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             flex: 1;
+            min-height: 0;
         }
 
         .settings-section {
@@ -802,14 +751,14 @@
         @media (max-width: 768px) {
             .main-container {
                 flex-direction: column;
-                padding: 1rem;
-                height: calc(100vh - 180px);
-                padding-bottom: 100px;
+                padding: 0.5rem;
             }
 
             .channels-sidebar {
                 width: 100%;
-                height: 200px;
+                min-width: 100%;
+                height: auto;
+                max-height: 30vh;
                 order: -1;
             }
 
@@ -836,6 +785,10 @@
 
             .header h1 {
                 font-size: 1.5rem;
+            }
+            
+            .header {
+                padding: 0.75rem 1rem;
             }
         }
 
@@ -976,35 +929,6 @@
 
         .settings-button:hover {
             transform: translateY(-2px);
-        }
-
-        .system-status {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .status-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid #f3f4f6;
-        }
-
-        .status-item:last-child {
-            border-bottom: none;
-        }
-
-        .status-label {
-            font-size: 0.9rem;
-            color: #6b7280;
-        }
-
-        .status-value {
-            font-size: 0.9rem;
-            font-weight: 500;
-            color: #374151;
         }
 
         .sources-section {
@@ -1455,132 +1379,61 @@
                 </div>
                 <span id="typing-text">BoostChatBot is thinking...</span>
             </div>
+
+            <!-- Chat Input Container -->
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea id="chat-input" class="chat-input" placeholder="Ask me anything about Boost libraries..."
+                        rows="1"></textarea>
+                    <button id="send-button" class="send-button">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Settings Panel -->
         <div class="settings-panel hidden" id="settings-panel">
             <div class="settings-panel-content">
                 <div class="settings-section">
-                    <h3>⚙️ RAG Settings</h3>
+                    <h3>🔍 Search Settings</h3>
                     <form class="settings-form" id="settings-form">
                         <div class="form-group">
-                            <label for="embedding-model">Embedding Model</label>
-                            <select id="embedding-model" name="embedding">
-                                <option value="">Loading models...</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Retrieval Method Weights</label>
-                            <div class="retrieval-weights">
-                                <div class="weight-input">
-                                    <label for="vector-search-weight">Vector Search Weight</label>
-                                    <input type="number" id="vector-search-weight" name="vector_search_weight" min="0"
-                                        max="1" step="0.1" value="0.7" />
-                                </div>
-                                <div class="weight-input">
-                                    <label for="bm25-search-weight">BM25 Search Weight</label>
-                                    <input type="number" id="bm25-search-weight" name="bm25_search_weight" min="0"
-                                        max="1" step="0.1" value="0.3" />
-                                </div>
-                                <div class="weight-input">
-                                    <label for="graph-search-weight">Graph Search Weight</label>
-                                    <input type="number" id="graph-search-weight" name="graph_search_weight" min="0"
-                                        max="1" step="0.1" value="0.15" />
-                                </div>
-                                <div class="weight-input">
-                                    <label for="hierarchical-search-weight">Hierarchical Search Weight</label>
-                                    <input type="number" id="hierarchical-search-weight"
-                                        name="hierarchical_search_weight" min="0" max="1" step="0.1" value="0.15" />
-                                </div>
+                            <label>Search Scope</label>
+                            <div style="display: flex; flex-direction: column; gap: 0.75rem; padding: 0.5rem 0;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="scope-documentation" name="scope" value="documentation" checked style="width: 18px; height: 18px;">
+                                    <span>📚 Documentation</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="scope-mail" name="scope" value="mail" checked style="width: 18px; height: 18px;">
+                                    <span>✉️ Mailing List</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" id="scope-slack" name="scope" value="slack" style="width: 18px; height: 18px;">
+                                    <span>💬 Slack (Coming Soon)</span>
+                                </label>
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="database-type">Database Type</label>
-                            <select id="database-type" name="database">
-                                <option value="faiss">FAISS</option>
-                                <option value="chroma">Chroma</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="llm-type">LLM Model</label>
-                            <select id="llm-type" name="llm">
-                                <option value="">Loading models...</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="language-select">Language</label>
-                            <select id="language-select" name="language">
-                                <option value="en">English</option>
-                                <option value="cn">Chinese</option>
-                                <option value="fr">French</option>
-                                <option value="es">Spanish</option>
-                                <option value="de">German</option>
-                                <option value="it">Italian</option>
-                                <option value="pt">Portuguese</option>
-                                <option value="ru">Russian</option>
-                                <option value="zh">Chinese (Traditional)</option>
-                                <option value="ja">Japanese</option>
-                                <option value="ko">Korean</option>
+                            <label for="search-limit">Results Limit</label>
+                            <select id="search-limit" name="search_limit">
+                                <option value="5">5 Results</option>
+                                <option value="10" selected>10 Results</option>
+                                <option value="15">15 Results</option>
+                                <option value="20">20 Results</option>
+                                <option value="30">30 Results</option>
+                                <option value="40">40 Results</option>
+                                <option value="50">50 Results</option>
+                                <option value="100">100 Results</option>
                             </select>
                         </div>
                     </form>
                 </div>
-
-
-                <div class="settings-section">
-                    <h3>📊 System Status</h3>
-                    <div class="system-status" id="system-status">
-                        <div class="status-item">
-                            <span class="status-label">Status:</span>
-                            <span class="status-value" id="system-status-value">Loading...</span>
-                        </div>
-                        <div class="status-item">
-                            <span class="status-label">Current Version:</span>
-                            <span class="status-value" id="current-version-display">Loading...</span>
-                        </div>
-                        <div class="status-item">
-                            <span class="status-label">Available Versions:</span>
-                            <span class="status-value" id="available-versions-count">Loading...</span>
-                        </div>
-                        <div class="status-item">
-                            <span class="status-label">RAG Statistics:</span>
-                            <span class="status-value" id="rag-stats">Loading...</span>
-                        </div>
-                    </div>
-                </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Chat Input Container - Always Visible -->
-    <div class="chat-input-container">
-        <div class="chat-input-wrapper">
-            <!-- Mode Selector -->
-            <div class="mode-selector">
-                <label class="mode-option">
-                    <input type="radio" name="mode" value="query" checked>
-                    <span class="mode-label">
-                        <span class="mode-icon">💬</span>
-                        Query
-                    </span>
-                </label>
-                <label class="mode-option">
-                    <input type="radio" name="mode" value="search">
-                    <span class="mode-label">
-                        <span class="mode-icon">🔍</span>
-                        Search
-                    </span>
-                </label>
-            </div>
-
-            <textarea id="chat-input" class="chat-input" placeholder="Ask me anything about Boost libraries..."
-                rows="1"></textarea>
-            <button id="send-button" class="send-button">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22,2 15,22 11,13 2,9"></polygon>
-                </svg>
-            </button>
         </div>
     </div>
 
@@ -1595,8 +1448,6 @@
 
                 this.initializeElements();
                 this.bindEvents();
-                this.loadSystemStatus();
-                this.loadRagStatistics();
                 this.loadAvailableModels();
                 this.createDefaultChannel();
 
@@ -1889,50 +1740,23 @@
                 }, 100);
 
                 try {
-                    // Get current RAG settings from the form
-                    const ragSettings = this.getCurrentRagSettings();
-
-                    // Get selected mode (query or search)
-                    const selectedMode = document.querySelector('input[name="mode"]:checked').value;
-
-                    let response;
-                    if (selectedMode === 'search') {
-                        // Call search endpoint for retrieval-only results
-                        response = await this.callAPI('/search', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                query: message,
-                                offset: 0,
-                                limit: 5,
-                                retrieval_weights: ragSettings.retrieval_weights,
-                                embedding: ragSettings.embedding,
-                                database: ragSettings.database,
-                                language: ragSettings.language
-                            })
-                        });
-                    } else {
-                        // Call query endpoint for LLM-generated answers
-                        response = await this.callAPI('/query', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                question: message,
-                                offset: 0,
-                                limit: 5,
-                                use_enhanced_rag: false,
-                                use_multi_step: false,
-                                use_evaluation: false,
-                                use_chat_history: true,
-                                clear_history: false,
-                                retrieval_weights: ragSettings.retrieval_weights,
-                                embedding: ragSettings.embedding,
-                                database: ragSettings.database,
-                                llm: ragSettings.llm,
-                                language: ragSettings.language
-                            })
-                        });
-                    }
+                    // Get search settings from the form
+                    const searchSettings = this.getCurrentSearchSettings();
+                    
+                    // Always use query endpoint for LLM-generated answers
+                    // Search mode removed - LangChain RAG only supports query mode
+                    const response = await this.callAPI('/query', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            question: message,
+                            search_scopes: searchSettings.scopes,
+                            search_limit: searchSettings.limit,
+                            use_chat_history: true,
+                            clear_history: false,
+                            client_id: this.currentChannelId || 'default'
+                        })
+                    });
 
                     this.hideTypingIndicator();
                     console.log('Received response from API:', response);
@@ -2133,9 +1957,8 @@
                 const textDiv = document.createElement('div');
                 textDiv.className = 'message-text';
 
-                // Handle different response formats
-                if (response.answer) {
-                    // Query response - has LLM-generated answer
+                // Handle query response with LLM-generated answer
+                if (response.retrieval_results) {
                     textDiv.innerHTML = this.formatAnswerText(response.answer);
 
                     // Also show retrieval results if available
@@ -2148,14 +1971,6 @@
                         retrievalSection.innerHTML = this.formatRetrievalResults(response.retrieval_results);
                         textDiv.appendChild(retrievalSection);
                     }
-                } else if (response.results) {
-                    // Search response - render like query retrieval results (no Sources section)
-                    window.__lastRetrievalResults = response.results;
-                    window.__apiBase = this.apiBase;
-                    const retrievalSection = document.createElement('div');
-                    retrievalSection.className = 'retrieval-results-section';
-                    retrievalSection.innerHTML = this.formatRetrievalResults(response.results);
-                    textDiv.appendChild(retrievalSection);
                 } else {
                     // Fallback
                     textDiv.innerHTML = '<p>No results found.</p>';
@@ -2174,7 +1989,7 @@
                 content.appendChild(textDiv);
                 content.appendChild(meta);
 
-                // Add sources if available
+                // Note: Source information is in retrieval_results
 
 
                 // Add version info if available
@@ -2231,43 +2046,7 @@
                 return formattedText;
             }
 
-            formatSearchResults(response) {
-                if (!response.results || response.results.length === 0) {
-                    return '<p>No search results found.</p>';
-                }
-
-                let html = '<div class="search-results">';
-                html += `<h3>🔍 Search Results (${response.total_results} found)</h3>`;
-
-                response.results.forEach((result, index) => {
-                    const truncatedText = result.text.length > 300 ? result.text.substring(0, 300) + '...' : result.text;
-                    const isLongText = result.text.length > 300;
-
-                    html += `
-                        <div class="search-result-item">
-                            <div class="search-result-header">
-                                <span class="result-number">${index + 1}</span>
-                                <span class="result-method">${result.retrieval_method || 'unknown'}</span>
-                                <span class="result-score">Score: ${result.score ? result.score.toFixed(3) : 'N/A'}</span>
-                            </div>
-                            <div class="search-result-file">📄 ${result.source_file || 'Unknown file'}</div>
-                            <div class="search-result-content">
-                                <div class="search-result-text">${truncatedText}</div>
-                                ${isLongText ? `
-                                    <button class="expand-search-btn" onclick="toggleSearchText(${index})">
-                                        <span class="expand-text">Show more</span>
-                                        <span class="expand-icon">▼</span>
-                                    </button>
-                                    <div class="search-result-full" style="display: none;">${result.text}</div>
-                                ` : ''}
-                            </div>
-                        </div>
-                    `;
-                });
-
-                html += '</div>';
-                return html;
-            }
+            // formatSearchResults removed - search mode no longer supported
 
             formatRetrievalResults(retrievalResults) {
                 if (!retrievalResults || retrievalResults.length === 0) {
@@ -2282,17 +2061,35 @@
                     const previewLine = result.text || '';
                     const isLongText = (result.text || '').length > 200;
                     const truncatedText = isLongText ? previewLine.substring(0, 200) + '...' : previewLine;
-                    const sourceType = (result.source_type || '').toLowerCase();
+                    const sourceType = (result.source_type || 'documentation').toLowerCase();
                     const metadata = result.metadata || {};
+                    
+                    // Determine icon and label based on source type
+                    let sourceIcon = '📄';
+                    let sourceLabel = 'Documentation';
+                    let sourceBadgeColor = '#e0e7ff';
+                    let sourceTextColor = '#3730a3';
+                    
+                    if (sourceType === 'mail' || sourceType === 'mailing_list' || sourceType === 'email') {
+                        sourceIcon = '✉️';
+                        sourceLabel = 'Mailing List';
+                        sourceBadgeColor = '#fef3c7';
+                        sourceTextColor = '#92400e';
+                    } else if (sourceType === 'slack' || sourceType === 'chat') {
+                        sourceIcon = '💬';
+                        sourceLabel = 'Slack';
+                        sourceBadgeColor = '#dbeafe';
+                        sourceTextColor = '#1e40af';
+                    }
 
                     html += `
                         <div class="retrieval-result-item">
                             <div class="retrieval-result-header">
                                 <span class="result-number">${index + 1}</span>
-                                <span class="result-method">${result.retrieval_method || 'unknown'}</span>
+                                <span class="result-method" style="background: ${sourceBadgeColor}; color: ${sourceTextColor};">${sourceIcon} ${sourceLabel}</span>
                                 <span class="result-score">Score: ${result.score ? result.score.toFixed(3) : 'N/A'}</span>
                             </div>
-                            <div class="retrieval-result-file"><a href="${fileLine}" target="_blank">📄 ${fileLine}</a></div>
+                            <div class="retrieval-result-file"><a href="${fileLine}" target="_blank">${sourceIcon} ${fileLine}</a></div>
                             <div class="retrieval-result-content">
                                 <div class="retrieval-result-text">${truncatedText}</div>
                                 <button class="expand-retrieval-btn" onclick="expandRetrieval(${index})">
@@ -2479,212 +2276,38 @@
                 });
             }
 
-            async loadSystemStatus() {
-                try {
-                    const response = await this.callAPI('/status');
-
-                    document.getElementById('system-status-value').textContent = 'Healthy';
-                    document.getElementById('current-version-display').textContent = response.current_version || 'None';
-                    document.getElementById('available-versions-count').textContent = response.available_versions ? response.available_versions.length : '0';
-
-                    // Update RAG stats if available
-                    if (response.rag_statistics) {
-                        const stats = response.rag_statistics;
-                        document.getElementById('rag-stats').textContent =
-                            `Embeddings: ${stats.total_embeddings || 0}, Entities: ${stats.knowledge_graph_entities || 0}`;
-                    } else {
-                        document.getElementById('rag-stats').textContent = 'Not loaded';
-                    }
-
-                    this.connectionStatus.textContent = 'Connected';
-                    this.connectionStatus.style.color = '#4ade80';
-
-                } catch (error) {
-                    document.getElementById('system-status-value').textContent = 'Error';
-                    this.connectionStatus.textContent = 'Disconnected';
-                    this.connectionStatus.style.color = '#ef4444';
-                    console.error('Error loading system status:', error);
-                }
-            }
-
-
-            async loadRagStatistics() {
-                try {
-                    const response = await this.callAPI('/rag/stats');
-                    if (response.message) {
-                        document.getElementById('rag-stats').textContent = response.message;
-                    } else {
-                        document.getElementById('rag-stats').textContent = 'RAG system loaded';
-                    }
-                } catch (error) {
-                    console.error('Error loading RAG statistics:', error);
-                    document.getElementById('rag-stats').textContent = 'Error loading stats';
-                }
-            }
 
             async loadAvailableModels() {
-                try {
-                    console.log('Loading available models...');
-
-                    // Load RAG configuration for dropdowns
-                    const ragConfig = await this.callAPI('/config/rag');
-                    console.log('✅ Loaded RAG configuration:', ragConfig);
-
-                    // Populate retrieval weights from config
-                    const vectorWeight = document.getElementById('vector-search-weight');
-                    const bm25Weight = document.getElementById('bm25-search-weight');
-                    const graphWeight = document.getElementById('graph-search-weight');
-                    const hierarchicalWeight = document.getElementById('hierarchical-search-weight');
-
-                    if (ragConfig.retrieval_default_weight) {
-                        if (vectorWeight) vectorWeight.value = ragConfig.retrieval_default_weight['vector search'] || 0.5;
-                        if (bm25Weight) bm25Weight.value = ragConfig.retrieval_default_weight['bm25 search'] || 0.2;
-                        if (graphWeight) graphWeight.value = ragConfig.retrieval_default_weight['graph search'] || 0.15;
-                        if (hierarchicalWeight) hierarchicalWeight.value = ragConfig.retrieval_default_weight['hierarchical search'] || 0.15;
-                        console.log('✅ Loaded retrieval weights:', ragConfig.retrieval_default_weight);
-                    }
-
-                    // Semantic chunking is always used (no UI needed)
-
-                    // Populate database types from config
-                    const databaseSelect = document.getElementById('database-type');
-                    if (databaseSelect && ragConfig.database_types) {
-                        databaseSelect.innerHTML = '';
-                        ragConfig.database_types.forEach(type => {
-                            const option = document.createElement('option');
-                            option.value = type;
-                            option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-                            if (type === ragConfig.defaults.database) {
-                                option.selected = true;
-                            }
-                            databaseSelect.appendChild(option);
-                        });
-                        console.log('✅ Loaded database types:', ragConfig.database_types);
-                    }
-
-                    // Set default language from config
-                    const languageSelect = document.getElementById('language-select');
-                    if (languageSelect && ragConfig.defaults.language) {
-                        languageSelect.value = ragConfig.defaults.language;
-                        console.log('✅ Set default language:', ragConfig.defaults.language);
-                    }
-
-                } catch (error) {
-                    console.error('❌ Error loading RAG configuration:', error);
-                }
-
-                // Load LLM models from Ollama (separate from config)
-                try {
-                    const llmResponse = await this.callAPI('/models/llm');
-                    const llmSelect = document.getElementById('llm-type');
-                    if (llmSelect) {
-                        llmSelect.innerHTML = '';
-                        if (llmResponse && llmResponse.models && llmResponse.models.length > 0) {
-                            llmResponse.models.forEach(model => {
-                                const option = document.createElement('option');
-                                option.value = model.name;
-                                // Show model name with size info for better UX
-                                const sizeInfo = model.size > 0 ? ` (${(model.size / 1024 / 1024 / 1024).toFixed(1)}GB)` : '';
-                                option.textContent = `${model.name}${sizeInfo}`;
-                                llmSelect.appendChild(option);
-                            });
-                            console.log('✅ Loaded LLM models from Ollama:', llmResponse.models);
-                        } else {
-                            llmSelect.innerHTML = '<option value="">No LLM models available</option>';
-                        }
-                    }
-                } catch (error) {
-                    console.error('❌ Error loading LLM models:', error);
-                    // Set fallback LLM options
-                    const llmSelect = document.getElementById('llm-type');
-                    if (llmSelect) {
-                        llmSelect.innerHTML = `
-                            <option value="gemma3:12b">gemma3:12b (fallback)</option>
-                            <option value="llama2">llama2 (fallback)</option>
-                            <option value="mistral">mistral (fallback)</option>
-                        `;
-                    }
-                }
-
-                // Load embedding models from Ollama (separate from config)
-                try {
-                    const embeddingResponse = await this.callAPI('/models/embedding');
-                    const embeddingSelect = document.getElementById('embedding-model');
-                    if (embeddingSelect) {
-                        embeddingSelect.innerHTML = '';
-                        // Extract models array from response object
-                        const models = embeddingResponse.models || embeddingResponse;
-                        if (models && models.length > 0) {
-                            models.forEach(model => {
-                                const option = document.createElement('option');
-                                option.value = model;
-                                option.textContent = model;
-                                embeddingSelect.appendChild(option);
-                            });
-                            console.log('✅ Loaded embedding models from Ollama:', models);
-                        } else {
-                            embeddingSelect.innerHTML = '<option value="">No embedding models available</option>';
-                        }
-                    }
-                } catch (error) {
-                    console.error('❌ Error loading embedding models:', error);
-                    // Set fallback embedding options
-                    const embeddingSelect = document.getElementById('embedding-model');
-                    if (embeddingSelect) {
-                        embeddingSelect.innerHTML = `
-                            <option value="sentence-transformers/all-MiniLM-L6-v2">sentence-transformers/all-MiniLM-L6-v2 (fallback)</option>
-                            <option value="google/embeddinggemma-300m">google/embeddinggemma-300m (fallback)</option>
-                        `;
-                    }
-                }
+                // Note: Search settings (scopes and limit) are now configured via UI checkboxes
+                // No need to load complex RAG configuration from API
+                console.log('✅ Search settings configured via UI controls (checkboxes and dropdown)');
             }
 
             setDefaultModelOptions() {
-                console.log('Setting fallback model options...');
-
-                // Set default retrieval weights if API fails
-                const vectorWeight = document.getElementById('vector-search-weight');
-                const bm25Weight = document.getElementById('bm25-search-weight');
-                const graphWeight = document.getElementById('graph-search-weight');
-                const hierarchicalWeight = document.getElementById('hierarchical-search-weight');
-
-                if (vectorWeight) vectorWeight.value = 0.5;
-                if (bm25Weight) bm25Weight.value = 0.2;
-                if (graphWeight) graphWeight.value = 0.15;
-                if (hierarchicalWeight) hierarchicalWeight.value = 0.15;
-
-                // Set default database types if API fails
-                const databaseSelect = document.getElementById('database-type');
-                if (databaseSelect) {
-                    databaseSelect.innerHTML = `
-                        <option value="faiss" selected>Faiss (fallback)</option>
-                        <option value="chroma">Chroma (fallback)</option>
-                    `;
-                }
+                // No longer needed - search settings are configured via UI controls
+                console.log('Using default search settings from UI');
             }
 
-            getCurrentRagSettings() {
-                // Get current values from the form
-                const vectorWeight = document.getElementById('vector-search-weight');
-                const bm25Weight = document.getElementById('bm25-search-weight');
-                const graphWeight = document.getElementById('graph-search-weight');
-                const hierarchicalWeight = document.getElementById('hierarchical-search-weight');
-                const embeddingSelect = document.getElementById('embedding-model');
-                const databaseSelect = document.getElementById('database-type');
-                const llmSelect = document.getElementById('llm-type');
-                const languageSelect = document.getElementById('language-select');
-
+            getCurrentSearchSettings() {
+                // Get search scopes from checkboxes
+                const scopeCheckboxes = document.querySelectorAll('input[name="scope"]:checked');
+                const scopes = Array.from(scopeCheckboxes).map(cb => cb.value);
+                
+                // Get search limit from dropdown
+                const limitSelect = document.getElementById('search-limit');
+                const limit = limitSelect ? parseInt(limitSelect.value) : 10;
+                
+                // If no scopes selected, default to all
+                if (scopes.length === 0) {
+                    return {
+                        scopes: ['documentation', 'mail'],
+                        limit: limit
+                    };
+                }
+                
                 return {
-                    embedding: embeddingSelect ? embeddingSelect.value : '',
-                    database: databaseSelect ? databaseSelect.value : 'faiss',
-                    retrieval_weights: {
-                        'vector search': vectorWeight ? parseFloat(vectorWeight.value) || 0.5 : 0.5,
-                        'bm25 search': bm25Weight ? parseFloat(bm25Weight.value) || 0.2 : 0.2,
-                        'graph search': graphWeight ? parseFloat(graphWeight.value) || 0.15 : 0.15,
-                        'hierarchical search': hierarchicalWeight ? parseFloat(hierarchicalWeight.value) || 0.15 : 0.15
-                    },
-                    llm: llmSelect ? llmSelect.value : '',
-                    language: languageSelect ? languageSelect.value : 'en'
+                    scopes: scopes,
+                    limit: limit
                 };
             }
 
@@ -2750,25 +2373,7 @@
             }
         }
 
-        // Toggle function for search result text expansion
-        function toggleSearchText(index) {
-            const button = document.querySelector(`.expand-search-btn:nth-of-type(${index + 1})`);
-            const fullText = button.parentNode.querySelector('.search-result-full');
-            const expandText = button.querySelector('.expand-text');
-            const expandIcon = button.querySelector('.expand-icon');
-
-            if (fullText.style.display === 'none' || fullText.style.display === '') {
-                fullText.style.display = 'block';
-                expandText.textContent = 'Show less';
-                expandIcon.textContent = '▲';
-                button.classList.add('expanded');
-            } else {
-                fullText.style.display = 'none';
-                expandText.textContent = 'Show more';
-                expandIcon.textContent = '▼';
-                button.classList.remove('expanded');
-            }
-        }
+        // toggleSearchText removed - search mode no longer supported
 
         async function expandRetrieval(index) {
             const button = event.target.closest('.expand-retrieval-btn');
@@ -2795,48 +2400,19 @@
                             fullBox.setAttribute('data-loaded', 'true');
                         } else {
                             // Decide which API to call based on type
-                            const sourceType = (resultData.source_type || '').toLowerCase();
-                            if (sourceType === 'email') {
-                                // Minimal email details only (no full content)
-                                const md = resultData.metadata || {};
-                                const sender = md.sender_address || md.from || '';
-                                const date = md.date || '';
-                                const to = md.to || '';
-                                const subject = md.subject || '';
-                                const url = md.url || resultData.source_file || '';
-                                if (sender || date || to || subject || url) {
-                                    const urlHtml = url ? `<div>URL: <a href="${url}" target="_blank">${url}</a></div>` : '';
-                                    fullBox.innerHTML = `
-                                        <div><strong>From:</strong> ${sender}</div>
-                                        <div><strong>To:</strong> ${to}</div>
-                                        <div><strong>Date:</strong> ${date}</div>
-                                        <div><strong>Subject:</strong> ${subject}</div>
-                                        ${urlHtml}
-                                    `;
-                                } else {
-                                    const params = new URLSearchParams();
-                                    if (resultData.source_file) params.set('url', resultData.source_file);
-                                    const res = await fetch(`${(window.__apiBase || '')}/mail/message?${params.toString()}`);
-                                    const data = await res.json();
-                                    const urlHtml = data.url ? `<div>URL: <a href="${data.url}" target="_blank">${data.url}</a></div>` : '';
-                                    fullBox.innerHTML = `
-                                        <div><strong>From:</strong> ${data.sender_address || ''}</div>
-                                        <div><strong>To:</strong> ${data.to || ''}</div>
-                                        <div><strong>Date:</strong> ${data.date || ''}</div>
-                                        <div><strong>Subject:</strong> ${data.subject || ''}</div>
-                                        ${urlHtml}
-                                    `;
-                                }
-                            } else {
-                                // Document: fetch full text based on relative source_file path
-                                const lang = (resultData.metadata && resultData.metadata.language) || undefined;
-                                const params = new URLSearchParams();
-                                if (resultData.source_file) params.set('path', resultData.source_file);
-                                if (lang) params.set('language', lang);
-                                const res = await fetch(`${(window.__apiBase || '')}/doc/fulltext?${params.toString()}`);
-                                const data = await res.json();
-                                fullBox.innerHTML = `<pre style="white-space: pre-wrap;">${data.content || ''}</pre>`;
-                            }
+                            // NOTE: LangChain RAG does not support mail hierarchy or fulltext expansion
+                            // Simply show the full text that was already retrieved
+                            const fullText = resultData.text || 'No additional content available.';
+                            const metadata = resultData.metadata || {};
+                            const metadataHtml = Object.keys(metadata).length > 0 
+                                ? '<div><strong>Metadata:</strong><ul>' + 
+                                  Object.entries(metadata).map(([k, v]) => `<li>${k}: ${v}</li>`).join('') + 
+                                  '</ul></div>'
+                                : '';
+                            fullBox.innerHTML = `
+                                <pre style="white-space: pre-wrap;">${fullText}</pre>
+                                ${metadataHtml}
+                            `;
                             fullBox.setAttribute('data-loaded', 'true');
                         }
                     } catch (e) {

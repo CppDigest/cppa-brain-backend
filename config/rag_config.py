@@ -26,14 +26,19 @@ class LangChainConfig:
     llm_max_tokens: int = 1024
 
     # Vector store settings
+    retriever_type: str = "chroma"  # Options: "chroma", "faiss", "duckdb"
     chroma_persist_dir: str = "langchain_rag/chroma_db"
     chroma_collection_name: str = "boost_docs"
     faiss_persist_dir: str = "langchain_rag/faiss_db"
+    duckdb_path: str = "langchain_rag/duckdb/duckdb_retriever.db"
 
     # Retrieval settings
     dense_top_k: int = 100
     sparse_top_k: int = 100
     final_top_k: int = 10
+    half_life: int = 1500
+    # DuckDB-specific settings
+    vector_batch_size: int = 1000  # Batch size for loading/storing vectors
 
     # TF-IDF settings
     max_features: int = 10000
@@ -75,15 +80,18 @@ class LangChainConfig:
             llm_model=os.getenv("LANGCHAIN_LLM_MODEL", "ollama_llama2_7b"),
             llm_temperature=float(os.getenv("LANGCHAIN_LLM_TEMPERATURE", "0.7")),
             llm_max_tokens=int(os.getenv("LANGCHAIN_LLM_MAX_TOKENS", "1024")),
+            retriever_type=os.getenv("LANGCHAIN_RETRIEVER_TYPE", "chroma"),
             chroma_persist_dir=os.getenv(
                 "LANGCHAIN_CHROMA_DIR", "./chroma_db_langchain"
             ),
             chroma_collection_name=os.getenv(
                 "LANGCHAIN_CHROMA_COLLECTION", "boost_docs"
             ),
+            duckdb_path=os.getenv("LANGCHAIN_DUCKDB_PATH", "langchain_rag/duckdb_retriever.db"),
             dense_top_k=int(os.getenv("LANGCHAIN_DENSE_TOP_K", "10")),
             sparse_top_k=int(os.getenv("LANGCHAIN_SPARSE_TOP_K", "10")),
             final_top_k=int(os.getenv("LANGCHAIN_FINAL_TOP_K", "15")),
+            vector_batch_size=int(os.getenv("LANGCHAIN_VECTOR_BATCH_SIZE", "1000")),
             max_features=int(os.getenv("LANGCHAIN_MAX_FEATURES", "10000")),
             use_cuda=os.getenv("LANGCHAIN_USE_CUDA", "true").lower() == "true",
             show_progress=os.getenv("LANGCHAIN_SHOW_PROGRESS", "true").lower()
@@ -116,11 +124,14 @@ class LangChainConfig:
             "llm_model": self.llm_model,
             "llm_temperature": self.llm_temperature,
             "llm_max_tokens": self.llm_max_tokens,
+            "retriever_type": self.retriever_type,
             "chroma_persist_dir": self.chroma_persist_dir,
             "chroma_collection_name": self.chroma_collection_name,
+            "duckdb_path": self.duckdb_path,
             "dense_top_k": self.dense_top_k,
             "sparse_top_k": self.sparse_top_k,
             "final_top_k": self.final_top_k,
+            "vector_batch_size": self.vector_batch_size,
             "max_features": self.max_features,
             "ngram_range": self.ngram_range,
             "use_cuda": self.use_cuda,
@@ -149,6 +160,10 @@ class LangChainConfig:
             raise ValueError(f"mail_data_dir does not exist: {self.mail_data_dir}")
         if not os.path.exists(self.doc_data_dir):
             raise ValueError(f"doc_data_dir does not exist: {self.doc_data_dir}")
+        if self.retriever_type not in ["chroma", "faiss", "duckdb"]:
+            raise ValueError(f"retriever_type must be 'chroma', 'faiss', or 'duckdb', got: {self.retriever_type}")
+        if self.vector_batch_size <= 0:
+            raise ValueError("vector_batch_size must be positive")
         return True
 
 
