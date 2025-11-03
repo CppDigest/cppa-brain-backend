@@ -13,6 +13,7 @@ sys.path.append(os.path.dirname(__file__))
 
 from config.rag_config import LangChainConfig
 from .hybrid_retriever import LangChainHybridRetriever
+from .duckdb_retriever import DuckDBHybridRetriever
 from .data_processor import BoostDataProcessor
 from .caching_telemetry import (
     QueryCache,
@@ -99,16 +100,8 @@ class LangChainRAGPipeline:
                 sparse_top_k=self.config.sparse_top_k,
                 final_top_k=self.config.final_top_k,
                 force_reindex=self.config.force_reindex,
+                half_life=self.config.half_life,
             )
-            
-            # base_retriever = FaissLangChainHybridRetriever(
-            #     embedding_model=self.config.embedding_model,
-            #     faiss_persist_dir=self.config.faiss_persist_dir,
-            #     dense_top_k=self.config.dense_top_k,
-            #     sparse_top_k=self.config.sparse_top_k,
-            #     final_top_k=self.config.final_top_k,
-            #     force_reindex=self.config.force_reindex,
-            # )
 
             # Wrap with instrumentation and caching
             retriever = base_retriever
