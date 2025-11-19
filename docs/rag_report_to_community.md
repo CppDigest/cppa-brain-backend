@@ -261,36 +261,16 @@ urlpatterns = [
 
 ### 2.2 Database Schema
 
-#### 2.2.1 CommunitySummary Model
+The `CommunitySummary` model stores AI-generated weekly summaries with the following key concepts:
 
-```python
-class CommunitySummary(TimeStampedModel):
-    """Stores AI-generated summaries of mailing list discussions."""
-    
-    start_date = models.DateTimeField()
-    end_date = models.DateTimeField()
-    summary_data = models.JSONField()  # Full summary JSON
-    topics_count = models.IntegerField(default=0)
-    recent_emails_count = models.IntegerField(default=0)
-    is_active = models.BooleanField(default=True)
-    need_review = models.BooleanField(default=True)
-    generated_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        ordering = ['-generated_at']
-        indexes = [
-            models.Index(fields=['is_active', 'need_review']),
-            models.Index(fields=['-generated_at']),
-        ]
-```
+- **Review Workflow:** `need_review` flag controls display (Wagtail sets to `False` after review)
+- **Data Storage:** `summary_data` contains publishable content, `original_summary_data` preserves the raw AI-generated version (read-only)
+- **Metadata:** `model_info` stores AI model details, `topics_count` and `recent_emails_count` provide quick statistics
+- **Review Tracking:** `main_reviewer` and `last_modified_at` track review history
 
-**Key Fields:**
-- `summary_data`: Complete JSON structure with topics, assertions, summaries
-- `is_active`: Only one active summary displayed at a time
-- `need_review`: Flag for manual review before activation
-- `topics_count`, `recent_emails_count`: Quick statistics
+#### 2.2.1 Summary Data Structure
 
-#### 2.2.2 Summary Data Structure
+The `summary_data` field stores only `summary_by_topic`:
 
 ```json
 {
@@ -311,15 +291,7 @@ class CommunitySummary(TimeStampedModel):
         }
       ]
     }
-  ],
-  "overall_stats": {
-    "topics_count": 5,
-    "recent_emails": 100,
-    "date_range": {
-      "start": "2025-11-06T00:00:00",
-      "end": "2025-11-13T00:00:00"
-    }
-  }
+  ]
 }
 ```
 
@@ -333,12 +305,6 @@ class CommunitySummary(TimeStampedModel):
 
 **Purpose:** Keep ChromaDB synchronized with HyperKitty
 
-**Process:**
-1. Query ChromaDB for latest email date
-2. Query HyperKitty for emails after that date
-3. Process and add new emails to ChromaDB
-4. Return statistics (added, updated, failed counts)
-
 **Error Handling:**
 - Retry on connection failures
 - Log failed emails for manual review
@@ -348,23 +314,21 @@ class CommunitySummary(TimeStampedModel):
 
 **Task:** `update_summary_data()`
 
-**Schedule:** Weekly Sunday at 1:00 AM
+**Schedule:** Every Sunday at 1:00 AM
 
 **Purpose:** Generate weekly community summaries
 
-**Process:**
-1. Deactivate existing active summary
-2. Call `generate_weekly_community_summary()`
-3. Create new `CommunitySummary` record
-4. Set `need_review=True` for manual approval
+#### 2.3.3 S3 Backup Task
 
-**Configuration:**
-```python
-# config/celery.py
-@periodic_task(run_every=crontab(hour=1, minute=0))
-def update_summary_data():
-    # Implementation
-```
+**Task:** `upload_vector_data_to_s3()`
+
+**Schedule:** Once per day
+
+**Purpose:** Backup ChromaDB vector data to S3 for disaster recovery
+
+**Error Handling:**
+- Log upload failures for manual intervention
+- Continue operation even if backup fails (non-critical)
 
 ### 2.4 Views and Templates
 
@@ -374,17 +338,6 @@ def update_summary_data():
 
 **Purpose:** Display community summaries on `/community/`
 
-**Key Methods:**
-- `get_context_data()`: Prepare template context
-  - Retrieve active summary from database
-  - Normalize reference URLs
-  - Assign continuous reference numbers
-  - Format data for template
-
-**URL Normalization:**
-- Convert archive API URLs to message URLs
-- Deduplicate URLs
-- Create reference number mapping
 
 #### 2.4.2 Template Structure
 
@@ -410,18 +363,15 @@ def update_summary_data():
 **Purpose:** Manual summary generation
 
 **Options:**
-- `--test`: Generate test data (no LLM calls)
-- `--deactivate-existing`: Deactivate current active summary
-- `--start-date`: Custom start date
-- `--end-date`: Custom end date
+- `--test`: Generate test data (no LLM calls). When used, sets `need_review=False` so the summary displays immediately.
 
 **Usage:**
 ```bash
-# Generate test summary
-python manage.py generate_community_summary --test --deactivate-existing
+# Generate test summary (displays immediately)
+python manage.py generate_community_summary --test
 
-# Generate real summary
-python manage.py generate_community_summary --deactivate-existing
+# Generate real summary (requires Wagtail review)
+python manage.py generate_community_summary
 ```
 
 #### 2.5.2 Additional Commands (Future)
@@ -470,7 +420,7 @@ Tests Celery tasks including email synchronization (`sync_new_mails_to_vector_db
 
 #### 4.2.4 Command Tests (`test_commands.py`)
 
-Tests management command execution, option parsing (`--test`, `--deactivate-existing`), and command output validation. Verifies test data generation and error message handling.
+Tests management command execution, option parsing (`--test`), and command output validation. Verifies test data generation and error message handling.
 
 #### 4.2.5 RAG Pipeline Tests (`tests_rag_pipeline/`)
 
@@ -536,4 +486,17 @@ This plan provides a comprehensive roadmap for integrating RAG capabilities into
 - Comprehensive test coverage
 - Performance within acceptable limits
 - Positive user feedback
+
+---
+
+## To Be Discussed
+
+### Wagtail Integration
+
+**Handled separately by the Wagtail team**:
+
+Review interface in Wagtail controls the `need_review` flag for each summary.
+Any reviewer edits must be persisted back to the `CommunitySummary` database record before activation.
+
+
 
