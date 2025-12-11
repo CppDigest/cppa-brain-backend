@@ -10,7 +10,24 @@ This report analyzes RAGaaS platforms for a **C++ Copilot** use case requiring s
 
 - **Data Types:** Code files (cpp, hpp, c, h), HTML, JSON, PDF, Markdown, TXT, AsciiDoc
 - **Data Sources:** Documentation, GitHub, HuggingFace, compiler outputs, Slack, mailing lists, Reddit
-- **Capabilities:** QA, Summarization, Hybrid retrieval (vector + keyword + semantic), High accuracy, Sophisticated system prompts
+- **Capabilities:** QA, Summarization, Graph RAG (knowledge graphs for entity relationships), Hybrid retrieval (vector + keyword + semantic), High accuracy, Sophisticated system prompts
+
+---
+
+## Comparison Summary
+
+| Platform             | Code Support | Graph RAG | Hybrid Retrieval | System Prompts | GitHub/Slack | Accuracy   | Pricing           | Recommendation |
+| -------------------- | ------------ | --------- | ---------------- | -------------- | ------------ | ---------- | ----------------- | -------------- |
+| **LlamaCloud**       | ⭐⭐⭐⭐⭐   | ✅ Yes    | ✅ Yes           | ✅ Advanced    | ✅ Native    | ⭐⭐⭐⭐⭐ | Usage-based       | **BEST FIT**   |
+| **Circlemind**       | ⭐⭐⭐⭐     | ✅ Yes    | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐⭐ | $300/mo           | **GRAPH RAG**  |
+| **Lettria**          | ⭐⭐⭐⭐     | ✅ Yes    | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐   | €600/mo           | **GRAPH RAG**  |
+| **Progress Agentic** | ⭐⭐⭐⭐     | ⚠️ Custom | ✅ Yes           | ✅ Advanced    | ⚠️ Custom    | ⭐⭐⭐⭐   | $700-1,750/mo     | **STRONG**     |
+| **Ragie**            | ⭐⭐⭐⭐     | ❌ No     | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐   | $100-500/mo       | **GOOD**       |
+| **Vectara**          | ⭐⭐⭐       | ❌ No     | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐⭐ | Free tier + usage | **SOLID**      |
+| **Nuclia**           | ⭐⭐⭐       | ❌ No     | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐   | Contact           | **MULTIMODAL** |
+| **Graphlit**         | ⭐⭐⭐       | ❌ No     | ⚠️ Limited       | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐     | $49/mo            | **BUDGET**     |
+| **Credal**           | ⭐⭐         | ❌ No     | ⚠️ Limited       | ⚠️ Limited     | ✅ Slack     | ⭐⭐⭐     | $500/mo           | **SECURITY**   |
+| **CustomGPT**        | ⭐⭐         | ❌ No     | ⚠️ Limited       | ⚠️ Limited     | ❌ No        | ⭐⭐       | $89/mo            | **NOT IDEAL**  |
 
 ---
 
@@ -23,6 +40,7 @@ This report analyzes RAGaaS platforms for a **C++ Copilot** use case requiring s
 **Technology:**
 
 - ✅ Native code parsing with AST support
+- ✅ Graph RAG support (via NebulaGraph integration, knowledge graphs)
 - ✅ Hybrid retrieval (vector, keyword, hybrid search)
 - ✅ GitHub integration (native)
 - ✅ Sophisticated system prompts
@@ -204,67 +222,81 @@ This report analyzes RAGaaS platforms for a **C++ Copilot** use case requiring s
 
 ---
 
-## Comparison Summary
+### 9. Circlemind ⭐ **GRAPH RAG SPECIALIST**
 
-| Platform             | Code Support | Hybrid Retrieval | System Prompts | GitHub/Slack | Accuracy   | Pricing           | Recommendation |
-| -------------------- | ------------ | ---------------- | -------------- | ------------ | ---------- | ----------------- | -------------- |
-| **LlamaCloud**       | ⭐⭐⭐⭐⭐   | ✅ Yes           | ✅ Advanced    | ✅ Native    | ⭐⭐⭐⭐⭐ | Usage-based       | **BEST FIT**   |
-| **Progress Agentic** | ⭐⭐⭐⭐     | ✅ Yes           | ✅ Advanced    | ⚠️ Custom    | ⭐⭐⭐⭐   | $700-1,750/mo     | **STRONG**     |
-| **Ragie**            | ⭐⭐⭐⭐     | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐   | $100-500/mo       | **GOOD**       |
-| **Vectara**          | ⭐⭐⭐       | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐⭐ | Free tier + usage | **SOLID**      |
-| **Nuclia**           | ⭐⭐⭐       | ✅ Yes           | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐⭐   | Contact           | **MULTIMODAL** |
-| **Graphlit**         | ⭐⭐⭐       | ⚠️ Limited       | ✅ Custom      | ⚠️ Custom    | ⭐⭐⭐     | $49/mo            | **BUDGET**     |
-| **Credal**           | ⭐⭐         | ⚠️ Limited       | ⚠️ Limited     | ✅ Slack     | ⭐⭐⭐     | $500/mo           | **SECURITY**   |
-| **CustomGPT**        | ⭐⭐         | ⚠️ Limited       | ⚠️ Limited     | ❌ No        | ⭐⭐       | $89/mo            | **NOT IDEAL**  |
+**URL:** https://circlemind.co/rag
+
+**Technology:**
+
+- ✅ **GraphRAG system** (knowledge graphs + vector databases)
+- ✅ Promptable GraphRAG (adapts to specific use cases)
+- ✅ Entity relationship understanding
+- ✅ Multi-hop reasoning via knowledge graphs
+- ✅ Code relationship mapping (functions, classes, dependencies)
+
+**Pricing:**
+
+- **Community Edition:** Free (self-hosted, open-source)
+- **Business:** $300/month (fully managed, advanced features, premium support)
+- **Enterprise:** Custom pricing (large-scale deployments)
+
+**C++ Copilot Suitability: ⭐⭐⭐⭐⭐**
+
+- Excellent for understanding code relationships, dependencies, and entity connections
+- Knowledge graphs ideal for code structure (class hierarchies, function calls, includes)
 
 ---
 
-## Pricing Factors
+### 10. Lettria ⭐ **GRAPH RAG FOR CODE**
 
-**How pricing relates to usage:**
+**URL:** https://lettria.com (estimated)
 
-1. **Data Size:**
+**Technology:**
 
-   - Fixed plans (Progress): Includes base data (10GB), upgrade for more
-   - Usage-based (LlamaCloud, Vectara): Charge per GB indexed
-   - Tier-based (Ragie): Different limits per tier
+- ✅ **GraphRAG solution** (mentioned in original sources)
+- ✅ Precision and dependability for generative AI
+- ✅ Graph-based retrieval for complex code relationships
+- ✅ Entity relationship understanding
 
-2. **Request Count:**
+**Pricing:**
 
-   - Token-based (Progress): $0.008 per token after allowance
-   - Query-based (Vectara, LlamaCloud): Per query/request
-   - Tier-based: Monthly limits with overage charges
+- **€600/month** (~$650/month)
 
-3. **Service Type:**
-   - Higher tiers: More features/support (e.g., Progress Growth $1,750 vs Fly $700)
-   - Enterprise: Custom pricing for large deployments
-   - Free tiers: Vectara, LlamaCloud for testing
+**C++ Copilot Suitability: ⭐⭐⭐⭐**
 
-**Cost Optimization:**
-
-- High token usage → Query-based pricing preferred
-- Large data volumes → Enterprise pricing or usage-based storage
-- Variable usage → Usage-based pricing
-- Predictable usage → Fixed monthly plans
+- GraphRAG optimized for code understanding and relationships
 
 ---
 
 ## Recommendations
 
-**Primary: LlamaCloud** - Best for native code support, AST parsing, GitHub integration, sophisticated prompts
+### For Graph RAG Support:
+
+**Best Graph RAG: Circlemind** - Dedicated GraphRAG service at $300/month, excellent for code relationships and entity understanding
+
+**Graph RAG + Code: LlamaCloud** - Graph RAG via NebulaGraph integration, plus native code support and GitHub integration
+
+**Graph RAG Budget: Lettria** - GraphRAG solution at €600/month, optimized for code precision
+
+### General Recommendations:
+
+**Primary: LlamaCloud** - Best for native code support, Graph RAG, AST parsing, GitHub integration, sophisticated prompts
+
+**Graph RAG Specialist: Circlemind** - Best for knowledge graph-based retrieval, entity relationships, multi-hop reasoning
 
 **Secondary: Progress Agentic RAG** - Best for enterprise security, modular architecture, any LLM support
 
-**Budget: Ragie** - Best for hybrid search at $100-500/month
+**Budget: Ragie** - Best for hybrid search at $100-500/month (no Graph RAG)
 
-**Quick Start: Vectara** - Best for free tier testing and high accuracy
+**Quick Start: Vectara** - Best for free tier testing and high accuracy (no Graph RAG)
 
 ---
 
 ## Implementation Considerations
 
 - **Data Ingestion:** Code parsing (C++/C with syntax awareness), documentation formats, GitHub/Slack integration
-- **Hybrid Retrieval:** Vector search (semantic) + Keyword search (exact matches) + Re-ranking
+- **Graph RAG Setup:** Configure knowledge graph extraction for code entities (classes, functions, dependencies)
+- **Hybrid Retrieval:** Graph traversal + Vector search (semantic) + Keyword search (exact matches) + Re-ranking
 - **System Prompts:** Code context, C++ specificity, multi-source combination, QA/summarization optimization
 
 ---
