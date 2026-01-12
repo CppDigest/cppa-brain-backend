@@ -6,19 +6,12 @@ with reranking, without any LLM dependencies.
 """
 
 import logging
+import os
 from typing import List, Dict, Any, Optional
 
-try:
-    from pinecone import Pinecone
-    from langchain_core.documents import Document
-except ImportError as e:
-    Pinecone = None  # type: ignore[assignment]
-    Document = None  # type: ignore[assignment]
-    _IMPORT_ERROR = e
-else:
-    _IMPORT_ERROR = None
-
-from config import PineconeConfig
+from pinecone import Pinecone
+from langchain_core.documents import Document
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +27,17 @@ class PineconeQuery:
 
     def __init__(
         self,
-        pinecone_config: Optional[PineconeConfig] = None,
     ):
-        self._validate_imports()
+        # Load environment variables from a local .env file if python-dotenv is available.
+        if load_dotenv is not None:
+            load_dotenv()
 
-        # Load config from environment variables (create new instances if not provided)
-        self.pinecone_config = pinecone_config or PineconeConfig()
+        self.pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
+        self.pinecone_index_name: str = os.getenv("PINECONE_INDEX_NAME", "rag-hybrid")
+        self.pinecone_rerank_model: str = os.getenv(
+            "PINECONE_RERANK_MODEL", "bge-reranker-v2-m3"
+        )
+        self.pinecone_top_k: int = int(os.getenv("PINECONE_TOP_K", "10"))
 
         # Initialize components
         self.pc: Optional[Pinecone] = None
@@ -47,18 +45,10 @@ class PineconeQuery:
         self.sparse_index: Optional[Any] = None
         self._indexes_initialized = False
 
-    def _validate_imports(self) -> None:
-        """Validate that required imports are available."""
-        if _IMPORT_ERROR is not None:
-            raise ImportError(
-                "Missing optional dependencies required for PineconeQuery. "
-                "Install with: pip install pinecone-client langchain-core"
-            ) from _IMPORT_ERROR
-
     def _initialize_pinecone_client(self) -> None:
         """Initialize Pinecone client if not already initialized."""
         if self.pc is None:
-            self.pc = Pinecone(api_key=self.pinecone_config.api_key)
+            self.pc = Pinecone(api_key=self.pinecone_api_key)
             logger.info("Pinecone client initialized")
 
     def _ensure_indexes_ready(self) -> None:
@@ -70,8 +60,8 @@ class PineconeQuery:
         if self.pc is None:
             raise RuntimeError("Pinecone client not initialized")
 
-        dense_name = self.pinecone_config.index_name
-        sparse_name = f"{self.pinecone_config.index_name}-sparse"
+        dense_name = self.pinecone_index_name
+        sparse_name = f"{self.pinecone_index_name}-sparse"
 
         self.dense_index = self.pc.Index(dense_name)
         self.sparse_index = self.pc.Index(sparse_name)
@@ -148,7 +138,7 @@ class PineconeQuery:
 
         try:
             rerank_result = self.pc.inference.rerank(
-                model="bge-reranker-v2-m3",
+                model=self.pinecone_rerank_model,
                 query=query,
                 documents=results,
                 rank_fields=["chunk_text"],
@@ -203,7 +193,7 @@ class PineconeQuery:
 
         Args:
             query: Query text string
-            top_k: Number of documents to retrieve (defaults to config value)
+            top_k: Number of documents to retrieve
             metadata_filter: Optional metadata filter
             namespace: Pinecone namespace
             use_reranking: Whether to use reranking (default: True)
@@ -211,7 +201,7 @@ class PineconeQuery:
         Returns:
             List of retrieved Document objects with similarity scores
         """
-        top_k = top_k or self.pinecone_config.top_k
+        top_k = top_k or self.pinecone_top_k
 
         # Ensure indexes are ready
         self._ensure_indexes_ready()

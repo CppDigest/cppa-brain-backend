@@ -13,10 +13,13 @@ When asked to retrieve information or answer questions using Pinecone vector dat
 
 - Check if `python-dotenv>=1.0.0` is installed
 - Check if `pinecone>=3.0.0` is installed
-- If not installed, run: `pip install python-dotenv>=1.0.0 pinecone>=3.0.0`
+- Check if `python-dotenv>=1.0.0` is installed
+
+- If not installed, run: `pip install python-dotenv>=1.0.0 pinecone>=3.0.0 python-dotenv>=1.0.0`
 - Ensure `.env` file exists with required Pinecone configuration:
   - `PINECONE_API_KEY`
   - `PINECONE_INDEX_NAME` (default: "rag-hybrid")
+  - `PINECONE_RERANK_MODEL` (default: "bge-reranker-v2-m3")
 
 ## 2. Read User's Prompt
 
