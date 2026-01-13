@@ -119,16 +119,6 @@ class SlackPreprocessor:
                 "Install with: pip install psycopg2-binary"
             ) from _IMPORT_ERROR
 
-    def _get_connection_string(self) -> str:
-        """Build PostgreSQL connection string."""
-        if self.slack_config.db_connection_string:
-            return self.slack_config.db_connection_string
-        return (
-            f"host={self.slack_config.db_host} port={self.slack_config.db_port} "
-            f"dbname={self.slack_config.db_name} user={self.slack_config.db_user} "
-            f"password={self.slack_config.db_password}"
-        )
-
     def _get_connection(self):
         """Get a database connection from the pool or create a new one."""
         if self._connection_pool is None:
@@ -136,7 +126,11 @@ class SlackPreprocessor:
                 self._connection_pool = pool.ThreadedConnectionPool(
                     minconn=1,
                     maxconn=5,
-                    dsn=self._get_connection_string(),
+                    dsn=(
+                        f"host={self.slack_config.db_host} port={self.slack_config.db_port} "
+                        f"dbname={self.slack_config.db_name} user={self.slack_config.db_user} "
+                        f"password={self.slack_config.db_password}"
+                    ),
                 )
                 logger.info("Created PostgreSQL connection pool")
             except Exception as e:
@@ -168,7 +162,6 @@ class SlackPreprocessor:
         Load Slack messages from PostgreSQL database.
 
         Args:
-            channel_filter: Optional list of channel IDs/names to filter
             date_from: Optional start date for filtering messages
             date_to: Optional end date for filtering messages
 
@@ -396,7 +389,7 @@ class SlackPreprocessor:
     def _is_consecutive_message(
         self, current_group: Dict[str, Any], next_msg: Dict[str, Any]
     ) -> bool:
-        """Check if next message is consecutive (within 5 minutes) to current group."""
+        """Check if next message is consecutive (within 60 minutes) to current group."""
         try:
             start_ts = float(current_group.get("start_ts"))
             next_ts = float(next_msg.get("ts"))
