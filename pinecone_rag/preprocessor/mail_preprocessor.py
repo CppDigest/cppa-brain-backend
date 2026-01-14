@@ -41,7 +41,9 @@ class MailPreprocessor:
         """Process all emails from mail list"""
         return self.process_mail_list(mail_list)
 
-    def convert_all_to_markdown(self, output_dir: Optional[str] = None) -> List[str]:
+    def convert_all_to_markdown(
+        self, output_dir: Optional[str] = "mail_data_dir/markdown"
+    ) -> List[str]:
         """
         Convert all email threads to markdown files
 
@@ -171,7 +173,6 @@ class MailPreprocessor:
 
         # Clean up whitespace and quotes
         content = re.sub(r"\s+", " ", content).strip()
-        content = content.replace('"', '"').replace('"', '"')
 
         return content if len(content) > 20 else None
 
@@ -272,8 +273,14 @@ class MailPreprocessor:
 
     def get_list_name_from_url(self, url: str) -> str:
         """Get list name from URL"""
-        list_name = url.split("/list/")[1]
-        list_name = list_name.split("/")[0]
+        list_name = ""
+        try:
+            list_name = url.split("/list/")[-1]
+            list_name = list_name.split("/")[0]
+
+        except Exception as e:
+            self.logger.error(f"Error getting list name from URL: {e}")
+
         return list_name
 
     def get_id_from_url(self, url: str) -> Optional[str]:
