@@ -28,12 +28,18 @@ class MailPreprocessor:
         self.mail_data_dir = Path(self.mail_config.mail_data_dir)
         self.logger = logger.bind(name="MailPreprocessor")
 
-    def load_emails(self) -> List[Document]:
+    def load_emails_from_dir(self) -> List[Document]:
         """Load and process all emails from data directory"""
         emails_path = self.mail_data_dir
         if emails_path.exists():
             return self._process_mail_data(emails_path)
         return []
+
+    def load_emails_from_mail_list(
+        self, mail_list: List[Dict[str, Any]]
+    ) -> List[Document]:
+        """Process all emails from mail list"""
+        return self.process_mail_list(mail_list)
 
     def convert_all_to_markdown(self, output_dir: Optional[str] = None) -> List[str]:
         """
