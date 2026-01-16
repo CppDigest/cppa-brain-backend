@@ -4,6 +4,7 @@ import json
 import requests
 import sys
 import os
+import time
 from typing import Dict, Optional, List
 
 
@@ -23,15 +24,53 @@ def _filter_by_date(
     return filtered, stop
 
 
-def _fetch_page(url: str, page: int) -> Optional[Dict]:
-    """Fetch a single API page."""
-    try:
-        resp = requests.get(f"{url}?limit=100&offset={(page-1)*100}", timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
-        print(f"Error fetching page {page}: {e}")
-        return None
+def _fetch_page(url: str, page: int, max_retries: int = 3) -> Optional[Dict]:
+    """Fetch a single API page with retry logic for 429 errors."""
+    url_with_params = f"{url}?limit=100&offset={(page-1)*100}"
+    delay_seconds_default = 10  # move to config
+
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(url_with_params, timeout=30)
+
+            if resp.status_code == 429:
+                retry_after = delay_seconds_default
+
+                # Try to get retry_after from headers
+                if "Retry-After" in resp.headers:
+                    retry_after = int(resp.headers["Retry-After"])
+                else:
+                    try:
+                        body = resp.json()
+                        retry_after = body.get("retry_after") or body.get("retry-after")
+                        if retry_after:
+                            retry_after = int(retry_after)
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        pass
+
+                if attempt == max_retries - 1:
+                    return None
+                print(
+                    f"Rate limited on page {page}, waiting {retry_after}s before retry {attempt+1}/{max_retries}"
+                )
+                time.sleep(retry_after)
+                continue
+
+            # Check for other errors
+            resp.raise_for_status()
+            return resp.json()
+
+        except requests.exceptions.HTTPError as e:
+            if e.response and e.response.status_code == 429:
+                # Already handled above, but catch any edge cases
+                continue
+            print(f"HTTP error fetching page {page}: {e}")
+            return None
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+            print(f"Error fetching page {page}: {e}")
+            return None
+
+    return None
 
 
 def fetch_api_data(
