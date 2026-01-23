@@ -1,7 +1,7 @@
 """
 Pinecone ingestion module for document indexing and vector storage.
 
-Handles Pinecone index creation, document chunking, and vector upsert operations.
+Handles Pinecone index creation, document chunking, and vector operations (upsert, update, delete).
 Uses Pinecone's integrated cloud embeddings for hybrid search (dense + sparse).
 
 Note: Document retrieval/search functionality is handled by query.py
@@ -30,26 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 class PineconeIngestion:
-    """
-    Handles Pinecone index creation, document chunking, and vector upsert operations.
+    """Handles Pinecone index creation, document chunking, and vector operations."""
 
-    Provides functionality for:
-    - Creating and managing Pinecone indexes (dense and sparse)
-    - Chunking documents with configurable parameters
-    - Filtering invalid chunks
-    - Upserting documents to Pinecone with error tracking
-    - Retrieving index statistics
-    """
-
-    def __init__(
-        self,
-    ):
-        """
-        Initialize PineconeIngestion with configuration from environment variables.
-
-        Loads PineconeConfig and EmbeddingConfig automatically.
-        Sets up client, text splitter, and index references (lazy initialization).
-        """
+    def __init__(self):
+        """Initialize with configuration from environment variables."""
         self._validate_imports()
 
         self.config = PineconeConfig()
@@ -65,7 +49,7 @@ class PineconeIngestion:
         )
 
     def _validate_imports(self) -> None:
-        """Validate that required imports are available."""
+        """Validate required imports."""
         if _IMPORT_ERROR is not None:
             raise ImportError(
                 "Missing optional dependencies required for Pinecone ingestion. "
@@ -73,16 +57,17 @@ class PineconeIngestion:
             ) from _IMPORT_ERROR
 
     def _setup_client(self) -> None:
-        """Set up Pinecone client variables."""
+        """Set up Pinecone client."""
         self.pc: Optional[Pinecone] = None
         self._pc_initialized = False
 
     def _initialize_text_splitter(self) -> None:
-        """Initialize text splitter for document chunking."""
+        """Initialize text splitter."""
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.config.chunk_size,
             chunk_overlap=self.config.chunk_overlap,
             length_function=len,
+            add_start_index=True,
         )
 
     def _setup_indexes(self) -> None:
@@ -93,7 +78,7 @@ class PineconeIngestion:
         self._sparse_index_initialized = False
 
     def _ensure_pinecone_client(self) -> None:
-        """Lazily initialize Pinecone client if not already initialized."""
+        """Initialize Pinecone client if needed."""
         if not self._pc_initialized:
             try:
                 self.pc = Pinecone(api_key=self.config.api_key)
@@ -107,11 +92,7 @@ class PineconeIngestion:
                 ) from e
 
     def _get_or_create_indexes(self) -> None:
-        """
-        Get existing indexes or create new ones if they don't exist.
-        Uses lazy initialization to avoid connection errors during __init__.
-        Creates both dense and sparse indexes for hybrid search.
-        """
+        """Get existing indexes or create new ones if they don't exist."""
         if self._dense_index_initialized and self._sparse_index_initialized:
             return
 
@@ -142,11 +123,11 @@ class PineconeIngestion:
     def _indexes_exist(
         self, existing_indexes: set, dense_name: str, sparse_name: str
     ) -> bool:
-        """Check if both dense and sparse indexes exist."""
+        """Check if indexes exist."""
         return dense_name in existing_indexes and sparse_name in existing_indexes
 
     def _connect_to_existing_indexes(self, dense_name: str, sparse_name: str) -> None:
-        """Connect to existing Pinecone indexes."""
+        """Connect to existing indexes."""
         logger.info(f"Using existing indexes: {dense_name} and {sparse_name}")
         if self.pc is None:
             raise RuntimeError("Pinecone client not initialized")
@@ -156,7 +137,7 @@ class PineconeIngestion:
     def _create_new_indexes(
         self, existing_indexes: set, dense_name: str, sparse_name: str
     ) -> None:
-        """Create new dense and sparse indexes if they don't exist."""
+        """Create new indexes if they don't exist."""
         logger.info(
             f"Creating new hybrid indexes in region {self.config.environment}: "
             f"{dense_name} (dense) and {sparse_name} (sparse)"
@@ -180,7 +161,7 @@ class PineconeIngestion:
             self._handle_index_creation_error(create_error)
 
     def _create_pinecone_index(self, index_name: str, model_name: str) -> None:
-        """Create Pinecone index with integrated embedding model."""
+        """Create Pinecone index with embedding model."""
         logger.info(f"Creating index '{index_name}' with model: {model_name}")
         if self.pc is None:
             raise RuntimeError("Pinecone client not initialized")
@@ -195,7 +176,7 @@ class PineconeIngestion:
         )
 
     def _handle_index_creation_error(self, error: Exception) -> None:
-        """Handle errors during index creation."""
+        """Handle index creation errors."""
         error_msg = str(error)
         if "NOT_FOUND" in error_msg or "not found" in error_msg.lower():
             raise ValueError(
@@ -205,122 +186,90 @@ class PineconeIngestion:
             ) from error
         raise error
 
-    def chunk_documents(
-        self,
-        documents: List[Document],
-        chunk_size: Optional[int] = None,
-        chunk_overlap: Optional[int] = None,
-    ) -> List[Document]:
-        """
-        Split documents into chunks using config defaults or provided parameters.
-
-        Args:
-            documents: List of documents to chunk
-            chunk_size: Optional chunk size (uses config default if not provided)
-            chunk_overlap: Optional chunk overlap (uses config default if not provided)
-
-        Returns:
-            List of chunked and filtered Document objects
-        """
+    def chunk_documents(self, documents: List[Document]) -> List[Document]:
+        """Split documents into chunks and filter invalid ones."""
         try:
-            # Use provided parameters or fall back to config defaults
-            size = chunk_size if chunk_size is not None else self.config.chunk_size
-            overlap = (
-                chunk_overlap
-                if chunk_overlap is not None
-                else self.config.chunk_overlap
-            )
-
-            # Update text splitter if parameters differ from current config
-            if size != self.config.chunk_size or overlap != self.config.chunk_overlap:
-                self.text_splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=size,
-                    chunk_overlap=overlap,
-                    length_function=len,
-                )
 
             chunks = self.text_splitter.split_documents(documents)
-            # Filter out chunks with empty, very short, or meaningless text
             valid_chunks = self._filter_valid_chunks(chunks)
-            filtered_count = len(chunks) - len(valid_chunks)
-            if filtered_count > 0:
-                logger.warning(
-                    f"Filtered out {filtered_count} chunks with empty, too short, or meaningless text"
-                )
-            logger.info(
-                f"Split {len(documents)} documents into {len(valid_chunks)} valid chunks"
-            )
+            self._log_chunking_results(documents, chunks, valid_chunks)
             return valid_chunks
         except Exception as e:
             logger.error(f"Error chunking documents: {e}")
             raise
 
-    def _filter_valid_chunks(self, chunks: List[Document]) -> List[Document]:
-        """Filter out chunks with empty, very short, or meaningless text."""
+    def _log_chunking_results(
+        self,
+        documents: List[Document],
+        chunks: List[Document],
+        valid_chunks: List[Document],
+    ) -> None:
+        """Log chunking results."""
+        filtered_count = len(chunks) - len(valid_chunks)
+        if filtered_count > 0:
+            logger.warning(
+                f"Filtered out {filtered_count} chunks with empty, too short, or meaningless text"
+            )
+        logger.info(
+            f"Split {len(documents)} documents into {len(valid_chunks)} valid chunks"
+        )
 
-        MIN_TEXT_LENGTH = 10  # Minimum characters required for sparse vector generation
-        MIN_WORDS = 3  # Minimum number of actual words
+    def _filter_valid_chunks(self, chunks: List[Document]) -> List[Document]:
+        """Filter invalid chunks."""
+        MIN_TEXT_LENGTH = 10
+        MIN_WORDS = 3
 
         valid_chunks = []
         for chunk in chunks:
             text = chunk.page_content.strip() if chunk.page_content else ""
-
-            # Skip empty or too short text
-            if not text or len(text) < MIN_TEXT_LENGTH:
-                continue
-
-            # Filter out markdown table separators and similar patterns
-            # Patterns like: "| --- | --- |", "|---|", "| - | - |", etc.
-            table_separator_pattern = r"^\|[\s\-:]+\|[\s\-:]*\|?[\s\-:]*\|?.*$"
-            if re.match(table_separator_pattern, text):
-                continue
-
-            # Filter out text that's mostly formatting characters (pipes, dashes, spaces)
-            # If more than 70% of characters are formatting, skip it
-            formatting_chars = len(re.findall(r"[|\-\s:]", text))
-            if len(text) > 0 and formatting_chars / len(text) > 0.7:
-                continue
-
-            # Filter out text with too few actual words
-            words = re.findall(r"\b[a-zA-Z0-9]+\b", text)
-            if len(words) < MIN_WORDS:
-                continue
-
-            # If more than 50% of non-space characters are punctuation, skip it
-            non_space_chars = re.findall(r"[^\s]", text)
-            punctuation_chars = len(re.findall(r"[^\w\s]", text))
-            if (
-                len(non_space_chars) > 0
-                and punctuation_chars / len(non_space_chars) > 0.5
-            ):
-                continue
-
-            valid_chunks.append(chunk)
+            if self._is_valid_chunk(text, MIN_TEXT_LENGTH, MIN_WORDS):
+                valid_chunks.append(chunk)
         return valid_chunks
+
+    def _is_valid_chunk(self, text: str, min_length: int, min_words: int) -> bool:
+        """Check if chunk is valid."""
+        if not text or len(text) < min_length:
+            return False
+        if self._is_table_separator(text):
+            return False
+        if self._is_mostly_formatting(text):
+            return False
+        if self._has_too_few_words(text, min_words):
+            return False
+        if self._is_mostly_punctuation(text):
+            return False
+        return True
+
+    def _is_table_separator(self, text: str) -> bool:
+        """Check if text is table separator."""
+        pattern = r"^\|[\s\-:]+\|[\s\-:]*\|?[\s\-:]*\|?.*$"
+        return bool(re.match(pattern, text))
+
+    def _is_mostly_formatting(self, text: str) -> bool:
+        """Check if text is mostly formatting."""
+        formatting_chars = len(re.findall(r"[|\-\s:]", text))
+        return len(text) > 0 and formatting_chars / len(text) > 0.7
+
+    def _has_too_few_words(self, text: str, min_words: int) -> bool:
+        """Check if text has too few words."""
+        words = re.findall(r"\b[a-zA-Z0-9]+\b", text)
+        return len(words) < min_words
+
+    def _is_mostly_punctuation(self, text: str) -> bool:
+        """Check if text is mostly punctuation."""
+        non_space_chars = re.findall(r"[^\s]", text)
+        punctuation_chars = len(re.findall(r"[^\w\s]", text))
+        return (
+            len(non_space_chars) > 0
+            and punctuation_chars / len(non_space_chars) > 0.5
+        )
 
     def upsert_documents(
         self,
         documents: List[Document],
         namespace: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Upsert documents to Pinecone indexes using cloud embeddings.
-
-        Documents are automatically chunked, filtered, and upserted to both
-        dense and sparse indexes. Returns statistics including failed documents.
-
-        Args:
-            documents: List of Document objects to upsert
-            namespace: Optional Pinecone namespace (default: None)
-
-        Returns:
-            Dictionary with keys:
-                - upserted: Number of successfully upserted documents
-                - total: Total number of input documents
-                - errors: List of error messages
-                - failed_documents: List of failed document info dicts
-                - failed_count: Count of failed documents
-        """
+        """Upsert documents to Pinecone indexes. Returns statistics."""
         try:
             if not documents:
                 logger.warning("No documents to upsert")
@@ -342,7 +291,7 @@ class PineconeIngestion:
     def _mark_batch_failed(
         self, batch: List[Document], error: Exception, start_idx: int
     ) -> List[Dict[str, Any]]:
-        """Mark all documents in a failed batch as failed."""
+        """Mark batch documents as failed."""
         failed = []
         for idx, doc in enumerate(batch):
             meta = doc.metadata or {}
@@ -362,7 +311,7 @@ class PineconeIngestion:
         documents: List[Document],
         namespace: Optional[str],
     ) -> tuple[int, List[str], List[Dict[str, Any]]]:
-        """Upsert all document batches and return statistics with failed documents."""
+        """Upsert all batches."""
         total_upserted, errors, failed_docs = 0, [], []
         batch_size = self.config.batch_size
 
@@ -403,7 +352,7 @@ class PineconeIngestion:
         errors: List[str],
         failed_documents: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Build and log upsert result dictionary."""
+        """Build upsert result."""
         result = {
             "upserted": total_upserted,
             "total": total,
@@ -422,7 +371,7 @@ class PineconeIngestion:
         return result
 
     def _ensure_indexes_ready(self) -> None:
-        """Ensure indexes are initialized and ready for use."""
+        """Ensure indexes are ready."""
         if not self._dense_index_initialized or not self._sparse_index_initialized:
             self._get_or_create_indexes()
         if self.dense_index is None or self.sparse_index is None:
@@ -431,10 +380,11 @@ class PineconeIngestion:
     def _prepare_batch_records(
         self, batch: List[Document], batch_start_idx: int
     ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Prepare records for Pinecone upsert from a batch of documents."""
-        MIN_TEXT_LENGTH = 10  # Minimum characters required for sparse vector generation
+        """Prepare batch records for upsert."""
+        MIN_TEXT_LENGTH = 10
         records = []
         failed_documents = []
+        
         for doc in batch:
             text = doc.page_content.strip() if doc.page_content else ""
             metadata = doc.metadata or {}
@@ -442,30 +392,35 @@ class PineconeIngestion:
                 metadata.get("doc_id") or f"doc_{batch_start_idx}_{len(records)}"
             )
 
-            # Skip documents with empty or too short text
             if not text or len(text) < MIN_TEXT_LENGTH:
                 failed_documents.append(
-                    {
-                        "doc_id": original_doc_id,
-                        "type": metadata.get("type", "unknown"),
-                        "reason": f"Text too short (length: {len(text)}, minimum: {MIN_TEXT_LENGTH})",
-                        "text_length": len(text),
-                        "metadata": metadata,
-                    }
+                    self._create_failed_doc_info(original_doc_id, metadata, text, MIN_TEXT_LENGTH)
                 )
                 continue
 
-            doc_id = f"{original_doc_id}_{text[:50]}_{len(text)}"
-            doc_id = hashlib.md5(doc_id.encode()).hexdigest()
-
-            record = {
-                "id": doc_id,
-                "chunk_text": text,
-            }
+            doc_id = self._generate_chunk_id(original_doc_id, text)
+            record = {"id": doc_id, "chunk_text": text}
             if metadata:
                 record.update(metadata)
             records.append(record)
         return records, failed_documents
+
+    def _create_failed_doc_info(
+        self, doc_id: str, metadata: Dict[str, Any], text: str, min_length: int
+    ) -> Dict[str, Any]:
+        """Create failed document info."""
+        return {
+            "doc_id": doc_id,
+            "type": metadata.get("type", "unknown"),
+            "reason": f"Text too short (length: {len(text)}, minimum: {min_length})",
+            "text_length": len(text),
+            "metadata": metadata,
+        }
+
+    def _generate_chunk_id(self, original_doc_id: str, text: str) -> str:
+        """Generate chunk ID."""
+        doc_id = f"{original_doc_id}_{text[:50]}_{len(text)}"
+        return hashlib.md5(doc_id.encode()).hexdigest()
 
     def _upsert_batch(
         self,
@@ -473,33 +428,169 @@ class PineconeIngestion:
         namespace: Optional[str],
         batch_num: int,
     ) -> None:
-        """Upsert a batch of records to both dense and sparse indexes."""
-        if self.dense_index is None or self.sparse_index is None:
-            raise RuntimeError("Pinecone indexes not initialized")
+        """Upsert batch to both indexes."""
+        self._ensure_indexes_ready()
+        self._upsert_to_index(self.dense_index, records, namespace, batch_num, "dense")
+        self._upsert_to_index(self.sparse_index, records, namespace, batch_num, "sparse")
+
+    def _upsert_to_index(
+        self,
+        index: Any,
+        records: List[Dict[str, Any]],
+        namespace: Optional[str],
+        batch_num: int,
+        index_type: str,
+    ) -> None:
+        """Upsert to single index."""
         try:
-            self.dense_index.upsert_records(records=records, namespace=namespace)
+            index.upsert_records(records=records, namespace=namespace)
         except Exception as e:
+            record_ids = [r.get("id", "unknown") for r in records]
             logger.error(
-                f"Failed to upsert batch {batch_num} to dense index: {e}. "
-                f"Records: {[r.get('id', 'unknown') for r in records]}"
+                f"Failed to upsert batch {batch_num} to {index_type} index: {e}. "
+                f"Records: {record_ids}"
             )
             raise
+
+    def update_documents(
+        self,
+        documents: List[Document],
+        namespace: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Update existing documents in Pinecone indexes."""
         try:
-            self.sparse_index.upsert_records(records=records, namespace=namespace)
+            if not documents:
+                logger.warning("No documents to update")
+                return {"updated": 0, "errors": []}
+
+            self._ensure_indexes_ready()
+            chunked_documents = self.chunk_documents(documents)
+            updated, errors = self._update_all_batches(chunked_documents, namespace)
+            
+            result = {
+                "updated": updated,
+                "total": len(documents),
+                "errors": errors,
+            }
+            logger.info(f"Update complete: {result['updated']}/{result['total']} documents")
+            return result
         except Exception as e:
-            logger.error(
-                f"Failed to upsert batch {batch_num} to sparse index: {e}. "
-                f"Records: {[r.get('id', 'unknown') for r in records]}"
-            )
+            logger.error(f"Error updating documents: {e}")
+            raise
+
+    def _update_all_batches(
+        self,
+        documents: List[Document],
+        namespace: Optional[str],
+    ) -> tuple[int, List[str]]:
+        """Update all batches."""
+        total_updated, errors = 0, []
+        batch_size = self.config.batch_size
+
+        for i in range(0, len(documents), batch_size):
+            batch = documents[i : i + batch_size]
+            batch_num = i // batch_size + 1
+            try:
+                records, _ = self._prepare_batch_records(batch, i)
+                if not records:
+                    continue
+                self._update_batch(records, namespace, batch_num)
+                total_updated += len(records)
+            except Exception as e:
+                error_msg = f"Error updating batch {batch_num}: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+
+        return total_updated, errors
+
+    def _update_batch(
+        self,
+        records: List[Dict[str, Any]],
+        namespace: Optional[str],
+        batch_num: int,
+    ) -> None:
+        """Update batch in both indexes."""
+        self._ensure_indexes_ready()
+        self._upsert_to_index(self.dense_index, records, namespace, batch_num, "dense")
+        self._upsert_to_index(self.sparse_index, records, namespace, batch_num, "sparse")
+        logger.info(f"Updated batch {batch_num}: {len(records)} documents")
+
+    def delete_documents(
+        self,
+        ids: List[str],
+        namespace: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Delete documents from Pinecone indexes by IDs."""
+        try:
+            if not ids:
+                logger.warning("No document IDs to delete")
+                return {"deleted": 0, "errors": []}
+
+            self._ensure_indexes_ready()
+            deleted, errors = self._delete_all_batches(ids, namespace)
+            
+            result = {
+                "deleted": deleted,
+                "total": len(ids),
+                "errors": errors,
+            }
+            logger.info(f"Delete complete: {result['deleted']}/{result['total']} documents")
+            return result
+        except Exception as e:
+            logger.error(f"Error deleting documents: {e}")
+            raise
+
+    def _delete_all_batches(
+        self,
+        ids: List[str],
+        namespace: Optional[str],
+    ) -> tuple[int, List[str]]:
+        """Delete all batches."""
+        total_deleted, errors = 0, []
+        batch_size = self.config.batch_size
+
+        for i in range(0, len(ids), batch_size):
+            batch_ids = ids[i : i + batch_size]
+            batch_num = i // batch_size + 1
+            try:
+                self._delete_batch(batch_ids, namespace, batch_num)
+                total_deleted += len(batch_ids)
+            except Exception as e:
+                error_msg = f"Error deleting batch {batch_num}: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+
+        return total_deleted, errors
+
+    def _delete_batch(
+        self,
+        ids: List[str],
+        namespace: Optional[str],
+        batch_num: int,
+    ) -> None:
+        """Delete batch from both indexes."""
+        self._ensure_indexes_ready()
+        self._delete_from_index(self.dense_index, ids, namespace, batch_num, "dense")
+        self._delete_from_index(self.sparse_index, ids, namespace, batch_num, "sparse")
+        logger.info(f"Deleted batch {batch_num}: {len(ids)} documents")
+
+    def _delete_from_index(
+        self,
+        index: Any,
+        ids: List[str],
+        namespace: Optional[str],
+        batch_num: int,
+        index_type: str,
+    ) -> None:
+        """Delete from single index."""
+        try:
+            index.delete(ids=ids, namespace=namespace)
+        except Exception as e:
+            logger.error(f"Failed to delete batch {batch_num} from {index_type} index: {e}")
             raise
 
     def get_index_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about the Pinecone indexes.
-
-        Returns:
-            Dictionary with index statistics for both dense and sparse indexes
-        """
+        """Get statistics about the Pinecone indexes."""
         try:
             self._ensure_indexes_ready()
             dense_stats = self.dense_index.describe_index_stats()  # type: ignore
@@ -512,7 +603,7 @@ class PineconeIngestion:
     def _format_index_stats(
         self, dense_stats: Dict[str, Any], sparse_stats: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Format index statistics into structured dictionary."""
+        """Format index statistics."""
         return {
             "dense_index": {
                 "total_vectors": dense_stats.get("total_vector_count", 0),
@@ -529,7 +620,7 @@ class PineconeIngestion:
         }
 
     def _get_empty_stats(self, error_msg: str) -> Dict[str, Any]:
-        """Return empty stats structure with error message."""
+        """Return empty stats with error."""
         empty_stats = {
             "total_vectors": 0,
             "dimension": 0,
