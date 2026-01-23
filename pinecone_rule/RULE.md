@@ -47,30 +47,191 @@ When asked to retrieve information or answer questions using Pinecone vector dat
 
 - Analyze user's question to determine the appropriate namespace:
   - **"mailing"**: For questions about Boost mailing list discussions, email threads, community discussions
-  - **"slack"**: For questions about Slack conversations, team discussions, chat history
-  - **"wg21"**: For questions about C++ standard proposals, WG21 documents
+  - **"slack-Cpplang"**: For questions about Slack conversations, team discussions, chat history
+  - **"wg21-papers"**: For questions about C++ standard proposals, WG21 papers
   - **"cpp-documentation"**: For questions about C++ documentation, Boost library documentation
-  - **"documentation"**: Alternative name for cpp-documentation
 - If namespace cannot be determined from context, default to **"mailing"**
 - Pass as `namespace` parameter
 
-### 3.4 Extract Metadata Filter (Timestamp)
+### 3.4 Extract Metadata Filter
 
-- Look for time-related keywords in user's prompt:
-  - "recent", "latest", "new", "current" → filter for recent documents
-  - "last week", "last month", "last year" → calculate date range
-  - Specific dates or date ranges → extract and convert to timestamp format
-- Build `metadata_filter` dictionary:
-  ```python
-  metadata_filter = {
-      "timestamp": {
-          "$gte": start_timestamp,  # Greater than or equal (optional)
-          "$lte": end_timestamp     # Less than or equal (optional)
-      }
-  }
-  ```
-- If no time filter is needed, set `metadata_filter = None`
-- Note: Currently only timestamp filtering is supported
+Extract metadata filters based on user's prompt and available metadata fields for each namespace.
+
+#### Available Metadata Fields by Namespace:
+
+**Namespace: "mailing"**
+- `timestamp`: Unix timestamp (float) - email sent date
+- `thread_id`: String - thread identifier
+- `subject`: String - email subject line
+- `author`: String - sender email address
+- `parent_id`: String - parent message ID
+- `doc_id`: String - message ID
+- `type`: String - always "mailing"
+
+**Namespace: "slack"**
+- `timestamp`: Unix timestamp (float) - message timestamp
+- `thread_ts`: String - thread timestamp (empty string if not in thread)
+- `channel_id`: String - Slack channel ID
+- `team_id`: String - Slack team ID
+- `user_name`: String - user display name
+- `is_grouped`: Boolean - whether message is grouped
+- `group_size`: Integer - number of messages in group
+- `doc_id`: String - message timestamp
+- `type`: String - always "slack"
+
+**Namespace: "wg21-papers"**
+- `timestamp`: Unix timestamp (float) - paper date
+- `document_number`: String - paper number (e.g., "P0843R10", "N1234")
+- `title`: String - paper title
+- `author`: String - author name
+- `url`: String - paper URL
+- `filename`: String - local filename
+- `doc_id`: String - document identifier
+- `type`: String - always "wg21-papers"
+
+**Namespace: "cpp-documentation"**
+- `build_time`: Unix timestamp (float) - documentation build time
+- `library`: String - Source name ("cppreference.com", "isocpp.github.io", "gcc.gnu.org", "cplusplus.com", "git_MicrosoftDocs", "git_cplusplus")
+- `lang`: String - language code (typically "en")
+- `doc_id`: String - documentation URL
+- `type`: String - always "documentation"
+
+#### Filter Construction:
+
+**1. Timestamp Filtering (Most Common)**
+
+Look for time-related keywords in user's prompt:
+- "recent", "latest", "new", "current" → filter for recent documents
+- "last week", "last month", "last year" → calculate date range
+- Specific dates or date ranges → extract and convert to timestamp format
+
+```python
+# Example: Filter for documents after a specific date
+metadata_filter = {
+    "timestamp": {
+        "$gte": start_timestamp,  # Greater than or equal (optional)
+        "$lte": end_timestamp      # Less than or equal (optional)
+    }
+}
+```
+
+**2. String Field Filtering**
+
+For string fields (subject, author, channel_id, etc.):
+```python
+# Exact match
+metadata_filter = {
+    "author": "john@example.com"
+}
+
+# Multiple conditions
+metadata_filter = {
+    "channel_id": "C123456",
+    "team_id": "T789012"
+}
+```
+
+**3. Numeric/Boolean Field Filtering**
+
+For numeric fields (group_size) or boolean fields (is_grouped):
+```python
+# Numeric comparison
+metadata_filter = {
+    "group_size": {"$gte": 5}  # Groups with 5 or more messages
+}
+
+# Boolean
+metadata_filter = {
+    "is_grouped": True
+}
+```
+
+**4. Combined Filters**
+
+Combine multiple conditions:
+```python
+metadata_filter = {"$and":[
+    "timestamp": {"$gte": start_timestamp},
+    "channel_id": "C123456",
+    "is_grouped": True
+  ]
+}
+```
+
+**5. No Filter**
+
+If no filter is needed, set `metadata_filter = None`
+
+#### Filter Operators:
+
+- `$gte`: Greater than or equal
+- `$lte`: Less than or equal
+- `$gt`: Greater than
+- `$lt`: Less than
+- `$eq`: Equal (default for string fields)
+- `$ne`: Matches vectors with metadata values that are not equal to a specified value.
+- `$in`: Value in array
+- `$nin`: Value not in array
+- `$exists`: Matches vectors with the specified metadata field
+- `$and`: Joins query clauses with a logical AND
+- `$or`: Joins query clauses with a logical OR
+
+
+
+#### Examples by Namespace:
+
+**Mailing List:**
+```python
+# Recent emails (last 30 days)
+metadata_filter = {
+    "timestamp": {"$gte": timestamp_30_days_ago}
+}
+
+# Specific thread
+metadata_filter = {
+    "thread_id": "thread/ABC123"
+}
+```
+
+**Slack:**
+```python
+# Recent messages in specific channel
+metadata_filter = {
+    "timestamp": {"$gte": timestamp_7_days_ago},
+    "channel_id": "C123456"
+}
+
+# Thread messages only
+metadata_filter = {
+    "thread_ts": {"$ne": ""}  # Not empty
+}
+```
+
+**WG21 Papers:**
+```python
+# Recent papers
+metadata_filter = {
+    "timestamp": {"$gte": timestamp_2024}
+}
+
+# Specific document number
+metadata_filter = {
+    "document_number": "P0843R10"
+}
+```
+
+**Documentation:**
+```python
+# Specific source/library
+metadata_filter = {
+    "library": "cppreference.com"  # Filter by source: "cppreference.com", "isocpp.github.io", "git_MicrosoftDocs", "git_cplusplus"
+}
+
+# Multiple sources using $in
+metadata_filter = {
+    "library": {"$in": ["cppreference.com", "isocpp.github.io"]}
+}
+```
 
 ## 4. Run query.py to Retrieve Results
 
@@ -135,7 +296,7 @@ For each essential document, generate a reference URL based on the namespace and
   - Format: `https://wg21.link/{document_id}` or similar (to be confirmed)
 - Example: `https://wg21.link/P1234R5`
 
-#### Namespace: "cpp-documentation" or "documentation"
+#### Namespace: "cpp-documentation"
 
 - Extract `doc_id` or `url` from metadata (if available)
 - Example: `https://www.boost.org/doc/libs/1.89.0/libs/filesystem/doc/index.html`
