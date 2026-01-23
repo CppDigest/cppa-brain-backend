@@ -7,7 +7,11 @@ alwaysApply: false
 
 When asked to retrieve information or answer questions using Pinecone vector database:
 
-## 1. Environment Setup
+---
+
+## Processing Procedures
+
+### 1. Environment Setup
 
 **Check and install required dependencies:**
 
@@ -21,20 +25,15 @@ When asked to retrieve information or answer questions using Pinecone vector dat
   - `PINECONE_INDEX_NAME` (default: "rag-hybrid")
   - `PINECONE_RERANK_MODEL` (default: "bge-reranker-v2-m3")
 
-## 2. Read User's Prompt
+### 2. Extract Parameters for query.py
 
-- Extract the user's question or information request from their prompt
-- Identify the main query intent and any specific requirements
+### 2.1 Query Text
 
-## 3. Extract Parameters for query.py
+- Extract and clean the core query text from the user's prompt
+- Remove unnecessary words but preserve intent
+- Pass as the `query` parameter to `PineconeQuery.query()`
 
-### 3.1 Query Text
-
-- Extract the core query text from the user's prompt
-- Clean and normalize the query (remove unnecessary words, but preserve intent)
-- This will be passed as the `query` parameter to `PineconeQuery.query()`
-
-### 3.2 Determine top_k
+### 2.2 Determine top_k
 
 - Default: `10` documents
 - Adjust based on user's request:
@@ -43,17 +42,17 @@ When asked to retrieve information or answer questions using Pinecone vector dat
   - If user specifies a number: use that number (within reasonable limits: 1-10000)
 - Pass as `top_k` parameter
 
-### 3.3 Determine Namespace
+### 2.3 Determine Namespace
 
 - Analyze user's question to determine the appropriate namespace:
   - **"mailing"**: For questions about Boost mailing list discussions, email threads, community discussions
-  - **"slack-Cpplang"**: For questions about Slack conversations, team discussions, chat history
+  - **"slack-Cpplang"**: For questions about Slack conversations, Cpplang team discussions, chat history
   - **"wg21-papers"**: For questions about C++ standard proposals, WG21 papers
   - **"cpp-documentation"**: For questions about C++ documentation, Boost library documentation
 - If namespace cannot be determined from context, default to **"mailing"**
 - Pass as `namespace` parameter
 
-### 3.4 Extract Metadata Filter
+### 2.4 Extract Metadata Filter
 
 Extract metadata filters based on user's prompt and available metadata fields for each namespace.
 
@@ -68,7 +67,7 @@ Extract metadata filters based on user's prompt and available metadata fields fo
 - `doc_id`: String - message ID
 - `type`: String - always "mailing"
 
-**Namespace: "slack"**
+**Namespace: "slack-Cpplang"**
 - `timestamp`: Unix timestamp (float) - message timestamp
 - `thread_ts`: String - thread timestamp (empty string if not in thread)
 - `channel_id`: String - Slack channel ID
@@ -100,10 +99,13 @@ Extract metadata filters based on user's prompt and available metadata fields fo
 
 **1. Timestamp Filtering (Most Common)**
 
-Look for time-related keywords in user's prompt:
-- "recent", "latest", "new", "current" → filter for recent documents
-- "last week", "last month", "last year" → calculate date range
-- Specific dates or date ranges → extract and convert to timestamp format
+Look for time-related keywords in user's prompt and calculate appropriate date ranges:
+
+- **"recent", "latest", "new", "current"** → filter for recent documents (last 30 days from today)
+- **"last week"** → calculate date range for the previous calendar week (Monday to Sunday)
+- **"last month"** → calculate date range for the **previous calendar month** (e.g., if today is 2026-01-23, "last month" = 2025-12-01 to 2025-12-31)
+- **"last year"** → calculate date range for the previous calendar year (e.g., if today is 2026-01-23, "last year" = 2025-01-01 to 2025-12-31)
+- **Specific dates or date ranges** → extract and convert to timestamp format
 
 ```python
 # Example: Filter for documents after a specific date
@@ -112,6 +114,33 @@ metadata_filter = {
         "$gte": start_timestamp,  # Greater than or equal (optional)
         "$lte": end_timestamp      # Less than or equal (optional)
     }
+}
+
+# Example: Last month (previous calendar month)
+from datetime import datetime, timedelta
+
+today = datetime.now()
+# Get first day of current month
+first_day_current = today.replace(day=1)
+# Get last day of previous month (day before first day of current month)
+last_day_previous = first_day_current - timedelta(days=1)
+# Get first day of previous month
+first_day_previous = last_day_previous.replace(day=1)
+
+start_timestamp = first_day_previous.timestamp()  # Start of last month (e.g., 2025-12-01 00:00:00)
+end_timestamp = last_day_previous.timestamp()     # End of last month (e.g., 2025-12-31 23:59:59)
+
+metadata_filter = {
+    "timestamp": {
+        "$gte": start_timestamp,
+        "$lte": end_timestamp
+    }
+}
+
+# Example: Recent (last 30 days from today)
+recent_timestamp = (datetime.now() - timedelta(days=30)).timestamp()
+metadata_filter = {
+    "timestamp": {"$gte": recent_timestamp}
 }
 ```
 
@@ -150,11 +179,12 @@ metadata_filter = {
 
 Combine multiple conditions:
 ```python
-metadata_filter = {"$and":[
-    "timestamp": {"$gte": start_timestamp},
-    "channel_id": "C123456",
-    "is_grouped": True
-  ]
+metadata_filter = {
+    "$and": [
+        {"timestamp": {"$gte": start_timestamp}},
+        {"channel_id": "C123456"},
+        {"is_grouped": True}
+    ]
 }
 ```
 
@@ -176,15 +206,15 @@ If no filter is needed, set `metadata_filter = None`
 - `$and`: Joins query clauses with a logical AND
 - `$or`: Joins query clauses with a logical OR
 
-
-
 #### Examples by Namespace:
 
 **Mailing List:**
 ```python
-# Recent emails (last 30 days)
+# Recent emails (last 30 days from today)
+from datetime import datetime, timedelta
+recent_timestamp = (datetime.now() - timedelta(days=30)).timestamp()
 metadata_filter = {
-    "timestamp": {"$gte": timestamp_30_days_ago}
+    "timestamp": {"$gte": recent_timestamp}
 }
 
 # Specific thread
@@ -195,9 +225,11 @@ metadata_filter = {
 
 **Slack:**
 ```python
-# Recent messages in specific channel
+# Recent messages in specific channel (last 7 days)
+from datetime import datetime, timedelta
+recent_timestamp = (datetime.now() - timedelta(days=7)).timestamp()
 metadata_filter = {
-    "timestamp": {"$gte": timestamp_7_days_ago},
+    "timestamp": {"$gte": recent_timestamp},
     "channel_id": "C123456"
 }
 
@@ -209,7 +241,9 @@ metadata_filter = {
 
 **WG21 Papers:**
 ```python
-# Recent papers
+# Recent papers (after a specific date)
+from datetime import datetime
+timestamp_2024 = datetime(2024, 1, 1).timestamp()
 metadata_filter = {
     "timestamp": {"$gte": timestamp_2024}
 }
@@ -224,7 +258,7 @@ metadata_filter = {
 ```python
 # Specific source/library
 metadata_filter = {
-    "library": "cppreference.com"  # Filter by source: "cppreference.com", "isocpp.github.io", "git_MicrosoftDocs", "git_cplusplus"
+    "library": "cppreference.com"  # Filter by source: "cppreference.com", "isocpp.github.io", "gcc.gnu.org", "cplusplus.com", "git_MicrosoftDocs", "git_cplusplus"
 }
 
 # Multiple sources using $in
@@ -233,20 +267,18 @@ metadata_filter = {
 }
 ```
 
-## 4. Run query.py to Retrieve Results
+### 3. Run query.py to Retrieve Results
 
-### 4.1 Initialize PineconeQuery
+### 3.1 Initialize PineconeQuery
 
 ```python
 from query import PineconeQuery
-from config import PineconeConfig
 
-# Load configuration from environment
-pinecone_config = PineconeConfig()
-query_client = PineconeQuery(pinecone_config=pinecone_config)
+# PineconeQuery loads configuration from environment variables automatically
+query_client = PineconeQuery()
 ```
 
-### 4.2 Execute Query
+### 3.2 Execute Query
 
 ```python
 documents = query_client.query(
@@ -258,17 +290,9 @@ documents = query_client.query(
 )
 ```
 
-### 4.3 Handle Results
+### 4. Post-Processing
 
-- Check if documents were retrieved
-- If no documents found, inform the user and suggest:
-  - Trying a different query
-  - Checking a different namespace
-  - Adjusting time filters if applied
-
-## 5. Post-Processing
-
-### 5.1 Generate Reference URLs from Metadata
+### 4.1 Generate Reference URLs from Metadata
 
 **Important**: Only generate URLs for **essential documents** (typically 10-20) that contain the most relevant content for the user's question. Do not generate URLs for all retrieved documents.
 
@@ -277,10 +301,10 @@ For each essential document, generate a reference URL based on the namespace and
 #### Namespace: "mailing"
 
 - Extract `doc_id` or `thread_id` from metadata
-- URL format: `http://lists.boost.org/archives/list/{doc_id}/`
+- URL format: `https://lists.boost.org/archives/list/{doc_id}/`
 - Example: `https://lists.boost.org/archives/list/boost-announce@lists.boost.org/message/O5VYCDZADVDHK5Z5LAYJBHMDOAFQL7P6/`
 
-#### Namespace: "slack"
+#### Namespace: "slack-Cpplang"
 
 - Extract `team_id`, `channel_id` and `doc_id` from metadata
 - Extract message_id from message_id = doc_id.replace('.', '')
@@ -288,22 +312,21 @@ For each essential document, generate a reference URL based on the namespace and
 - Alternative format (if available): Use `source` field from metadata directly
 - Example: `https://app.slack.com/client/T123456789/C123456/p1234567890`
 
-#### Namespace: "wg21"
+#### Namespace: "wg21-papers"
 
-- Extract `url` or `document_id` from metadata
+- Extract `url` or `doc_id` from metadata
 - If `url` exists in metadata, use it directly
-- Otherwise, construct from `document_id`:
-  - Format: `https://wg21.link/{document_id}` or similar (to be confirmed)
-- Example: `https://wg21.link/P1234R5`
+- Otherwise, construct from `doc_id` (which has format `wg21/{document_number}` or `wg21/{filename}`):
+  - Extract document number from `doc_id` by removing `wg21/` prefix
+  - Format: `https://www.open-std.org/jtc1/sc22/wg21/docs/papers/{year}/{document_number}.pdf` or use `url` field if available
+- Example: If `doc_id = "wg21/P0999R0"`, extract `P0999R0` and construct URL like `https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0999r0.pdf`
 
 #### Namespace: "cpp-documentation"
 
 - Extract `doc_id` or `url` from metadata (if available)
 - Example: `https://www.boost.org/doc/libs/1.89.0/libs/filesystem/doc/index.html`
 
-**Note**: URL generation rules may be updated later. For now, use the patterns above or extract `url` directly from metadata if available.
-
-### 5.2 Generate Systematic Report with Summarization
+### 4.2 Generate Systematic Report with Summarization
 
 #### Report Structure:
 
@@ -367,7 +390,7 @@ The answer should be a **logical, systematic report** that synthesizes and summa
 
 **DON'T:**
 
-- Don't just list documents one by one
+- Don't just list documents one by one unless the user requires it.
 - Don't quote excessively long passages (keep excerpts to 2-4 sentences)
 - Don't repeat the same information multiple times
 - Don't include irrelevant details
@@ -429,28 +452,26 @@ _Note: Only essential references (10-20) are included. Not all retrieved documen
 
 > Multiple discussions [1][2][3] highlight several approaches to optimize Boost.Asio applications. Performance improvements can be achieved through proper use of async operations, particularly the new `async_read_some()` and `async_write_some()` functions introduced in Boost 1.89 [1]. One discussion notes: "The new async operations provide better memory efficiency and reduce context switching overhead" [1]. Careful memory management using `boost::asio::buffer` and proper lifetime management of async operation handlers is essential for scalability [2]. The library's support for TCP, UDP, and SSL/TLS protocols [3] provides flexibility in implementation, with recent additions supporting HTTP/2 and WebSocket protocols built on top of Boost.Beast [3].
 
-#### Best Practices:
+### 5. Cleanup temporary files
 
-- **Include specific details**: Always include concrete information like library names, feature names, version numbers, API changes, and technical specifications
-- **Quote valuable content**: Include 2-4 sentence excerpts when documents contain particularly informative technical details, examples, or important information
-- **Balance synthesis with detail**: Synthesize information from multiple sources while preserving and including the specific details from each source
-- **Synthesize first, cite second**: Create coherent insights with rich content, then cite sources
-- **Group by theme**: Organize information logically rather than by document order, but include specific details within each theme
-- **Use multiple citations**: When information appears in multiple sources, cite all: [1][2][3]
-- **Prioritize relevance**: Most relevant information should appear first, with sufficient detail to be informative
-- **Maintain flow**: Use transitional phrases to connect ideas while preserving specific details
-- **Be informative, not just concise**: Include enough detail to be valuable - prefer "Boost.Asio received new async features X and Y [1]" over "Boost.Asio received updates [1]"
-- **Check completeness**: Ensure all cited references appear in References section
-- **Filter references**: Only include essential URLs (10-20) that are actually cited or contain critical information for the answer
+After generating the report, remove all temporary files except:
 
-## 6. Error Handling
+- Configuration files (e.g., `.env`, `config.py`, etc.)
+- The generated report file
+- Do not remove any files in the `config/` directory or configuration-related files
+
+### 6. Error Handling
 
 - **Import Errors**: If `PineconeQuery` cannot be imported, check dependencies and install missing packages
 - **Connection Errors**: If Pinecone connection fails, check API key and environment settings
 - **Empty Results**: Inform user and suggest alternative queries or namespaces
 - **Metadata Errors**: If URL generation fails, include document ID or metadata in reference instead
 
-## 7. Example Workflow
+---
+
+## Rules and Guidelines
+
+### 7. Example Workflow
 
 **User Prompt**: "What are the recent discussions about Boost.Asio performance?"
 
@@ -459,7 +480,16 @@ _Note: Only essential references (10-20) are included. Not all retrieved documen
 - Query: "Boost.Asio performance"
 - top_k: 10 (default)
 - namespace: "mailing" (discussions)
-- metadata_filter: `{"timestamp": {"$gte": recent_timestamp}}` (recent discussions)
+- metadata_filter: `{"timestamp": {"$gte": recent_timestamp}}` (recent = last 30 days from today)
+
+**User Prompt**: "What messages were created last month?"
+
+**Extracted Parameters**:
+
+- Query: "message email discussion"
+- top_k: 10 (default)
+- namespace: "mailing" (or "slack-Cpplang" depending on context)
+- metadata_filter: Calculate previous calendar month using the method shown in section 2.4 (e.g., if today is 2026-01-23, last month = 2025-12-01 to 2025-12-31)
 
 **Execution**:
 
@@ -479,23 +509,12 @@ _Note: Only essential references (10-20) are included. Not all retrieved documen
 - Key Findings (with concrete examples and specifics)
 - References (only essential URLs, 10-20, with metadata)
 
-11. **Cleanup**: After generating the report, remove all temporary files except:
+11. **Cleanup**: Follow the cleanup instructions in section 5
 
-- Configuration files (e.g., `.env`, `config.py`, etc.)
-- The generated report file
-- Do not remove any files in the `config/` directory or configuration-related files
-
-## Technical Notes
+### 8. Technical Notes
 
 - The `PineconeQuery` class uses hybrid search (dense + sparse) with reranking
 - Results are automatically deduplicated and sorted by relevance
-- Metadata filters currently support timestamp filtering only
+- Metadata filters support timestamp, string, numeric, boolean, and combined filtering (see section 2.4)
 - URL generation rules are namespace-specific and may be updated
 - Always use reranking (`use_reranking=True`) for best results unless explicitly requested otherwise
-- **Answer generation should balance synthesis with rich content**: Synthesize information while including specific details, library names, feature names, version numbers, and technical specifications from source documents
-- **Include concrete examples**: When documents mention specific libraries, features, or changes, include their names and detailed descriptions
-- **Quote valuable passages**: Include 2-4 sentence excerpts when documents contain particularly informative content
-- Group retrieved documents by themes/topics before writing the report
-- Prioritize creating coherent insights while preserving important specifics from source documents
-- The report format emphasizes logical organization and systematic presentation of findings with sufficient detail to be informative and valuable
-- **Cleanup**: After report generation, remove all temporary files except configuration files (`.env`, `config.py`, etc.) and the generated report file
