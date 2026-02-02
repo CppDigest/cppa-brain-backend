@@ -7,10 +7,30 @@ Common functions shared across different preprocessor classes.
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Iterable, FrozenSet
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+# Default greeting/unessential words for filter_sentence (e.g. Slack message cleaning)
+SLACK_GREETING_WORDS: FrozenSet[str] = frozenset({
+    "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+    "greetings", "howdy", "sup", "what's up", "yo", "hii", "helloo",
+    "thanks", "thank you", "thx", "ty", "appreciate it", "cheers",
+    "nice to meet you", "happy to be here", "happy to have you here",
+    "glad to see you", "glad to see you here", "glad to be here",
+    "bye", "goodbye", "see you later", "see you soon", "see you tomorrow",
+    "see you next week", "see you next month", "see you next year",
+    "see you in the future",
+})
+SLACK_UNESSENTIAL_WORDS: FrozenSet[str] = frozenset({
+    "ok", "okay", "sure", "yeah", "yep", "yup", "nope", "nah",
+    "lol", "haha", "hahaha", "hehe", "lmao", "rofl",
+    "👍", "👎", "😊", "😄", "😀", "👍🏻", "👌",
+    "got it", "gotcha", "nice", "awesome", "great",
+    "uhm", "um", "uh", "erm", "of course",
+})
 
 
 # Common date formats used across different data sources
@@ -158,6 +178,54 @@ def clean_text(text: str, remove_extra_spaces: bool = True) -> str:
         text = "\n".join(line.strip() for line in text.split("\n"))
 
     return text.strip()
+
+
+def filter_sentence(
+    sentence: str,
+    greeting_words: Optional[Iterable[str]] = None,
+    unessential_words: Optional[Iterable[str]] = None,
+    min_words_after: int = 3,
+) -> str:
+    """
+    Filter a single sentence by removing greeting/unessential words.
+
+    Removes phrases from greeting_words and unessential_words (case-insensitive),
+    then returns the stripped sentence, or "" if too few words remain.
+
+    Args:
+        sentence: Input sentence to filter.
+        greeting_words: Phrases to remove (e.g. "hi", "thank you"). Default: SLACK_GREETING_WORDS.
+        unessential_words: Phrases to remove (e.g. "ok", "lol"). Default: SLACK_UNESSENTIAL_WORDS.
+        min_words_after: Minimum word count to keep; otherwise return "". Default: 3.
+
+    Returns:
+        Filtered sentence (lowercased, stripped), or "" if empty or below min_words_after.
+
+    Examples:
+        >>> filter_sentence("Hi there, can you help?")
+        'there, can you help?'
+        >>> filter_sentence("ok sure")
+        ''
+    """
+    sentence = sentence.strip()
+    if not sentence:
+        return ""
+
+    greeting = set(greeting_words) if greeting_words is not None else SLACK_GREETING_WORDS
+    unessential = set(unessential_words) if unessential_words is not None else SLACK_UNESSENTIAL_WORDS
+
+    sentence_lower = sentence.lower()
+    greeting_found = [w for w in greeting if w in sentence_lower]
+    unessential_found = [w for w in unessential if w in sentence_lower]
+
+    if greeting_found or unessential_found:
+        for word in greeting_found + unessential_found:
+            sentence_lower = sentence_lower.replace(word, "")
+
+    if len(sentence_lower.strip().split()) <= min_words_after:
+        return ""
+
+    return sentence_lower.strip()
 
 
 def extract_video_id_from_filename(filename: str) -> Optional[str]:
