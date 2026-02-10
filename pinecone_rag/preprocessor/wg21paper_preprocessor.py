@@ -9,9 +9,12 @@ from typing import List, Dict, Any, Optional
 from langchain_core.documents import Document
 from tqdm import tqdm
 from loguru import logger
-from datetime import datetime
 
 from config import WG21Config
+from preprocessor.utility import (
+    get_timestamp_from_date,
+    validate_content_length,
+)
 
 
 class WG21PaperPreprocessor:
@@ -78,10 +81,15 @@ class WG21PaperPreprocessor:
         # Process markdown files
         documents = []
         md_files = list(self.data_dir.rglob("*.md"))
+        asc_files = list(self.data_dir.rglob("*.asc"))
+        txt_files = list(self.data_dir.rglob("*.txt"))
 
         self.logger.info(f"Found {len(md_files)} markdown files")
+        self.logger.info(f"Found {len(asc_files)} asc files")
+        self.logger.info(f"Found {len(txt_files)} txt files")
+        all_files = md_files + asc_files + txt_files
 
-        for file_path in tqdm(md_files, desc="Processing WG21 papers"):
+        for file_path in tqdm(all_files, desc="Processing WG21 papers"):
             try:
                 # Get relative path from data_dir
                 relative_path = file_path.relative_to(self.data_dir)
@@ -97,11 +105,15 @@ class WG21PaperPreprocessor:
                     filename = file_path.name
                     metadata = metadata_dict.get(filename)
 
+                if not metadata:
+                    self.logger.warning(f"No metadata found for {file_path}")
+                    continue
+
                 # Read markdown content
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
-                if len(content.strip()) < 50:
+                if not validate_content_length(content, min_length=50):
                     self.logger.warning(f"Skipping short file: {file_path}")
                     continue
 
@@ -125,36 +137,30 @@ class WG21PaperPreprocessor:
         """Create a Document from paper content and metadata"""
 
         # Extract document number from content if available
-        doc_number = self._extract_document_number(content)
+        doc_number = file_path.stem
 
         # Get metadata fields
         url = metadata.get("url", "") if metadata else ""
         author = metadata.get("author", "").strip() if metadata else ""
+        authors = author.split(",") if author else ["unknown"]
         title = metadata.get("title", "").strip() if metadata else ""
         date_str = metadata.get("date", "") if metadata else ""
 
         # Parse date to timestamp
-        timestamp = self._parse_date_to_timestamp(date_str)
+        timestamp = get_timestamp_from_date(date_str)
         if timestamp is None:
             self.logger.warning(f"Failed to parse date: {date_str}")
             return None
 
-        # Generate doc_id from URL or filename
-        doc_id = self._generate_doc_id(url, file_path, doc_number)
-
         # Build metadata
         doc_metadata = {
-            "doc_id": doc_id,
+            "document_number": doc_number,
             "type": self.wg21_config.namespace,
             "title": title or file_path.stem,
-            "author": author,
+            "author": authors,
             "timestamp": timestamp,
             "url": url,
-            "filename": file_path.name,
         }
-
-        if doc_number:
-            doc_metadata["document_number"] = doc_number
 
         return Document(page_content=content, metadata=doc_metadata)
 
@@ -172,47 +178,6 @@ class WG21PaperPreprocessor:
             if match:
                 return match.group(1).strip()
 
-        return None
-
-    def _parse_date_to_timestamp(self, date_str: str) -> float:
-        """Parse date string to timestamp"""
-        if not date_str:
-            print(f"No date string provided")
-            return datetime.now().timestamp()
-
-        formats = ["%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y"]
-        for fmt in formats:
-            try:
-                dt = datetime.strptime(date_str.strip(), fmt)
-                return dt.timestamp()
-            except ValueError:
-                continue
-
-        print(f"Failed to parse date: {date_str}")
-        try:
-            fmt = "%Y%m%d"
-            dt = datetime.strptime(date_str.strip(), fmt)
-            return dt.timestamp()
-        except ValueError:
-            pass
-
-        try:
-            elements = date_str.replace("\xad", "").split("-")
-            if len(elements) == 1:
-                elements = elements[0].split("‐")
-            if len(elements) == 3:
-                year, month, day = elements
-                year = int(year)
-                month = int(month)
-                day = int(day)
-                if month > 12:
-                    month = month - 10
-                dt = datetime(year, month, day)
-                return dt.timestamp()
-        except ValueError:
-            pass
-
-        print(f"Failed to parse date: {date_str}")
         return None
 
     def _generate_doc_id(
