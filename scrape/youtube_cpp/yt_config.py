@@ -39,16 +39,6 @@ VIDEO_PART = "snippet,contentDetails,statistics"  # Parts to retrieve for video 
 PUBLISHED_AFTER = "2022-01-01T00:00:00Z"
 VIDEO_CATEGORY_ID = None  # Optional: YouTube category id filter
 
-# Data Collection Mode (drives what to collect; skip when files already exist)
-# "metadata" = only save metadata JSON (video_id.json)
-# "transcript" = metadata + transcript (skip if both exist)
-# "full" = metadata + transcript + video (skip if all exist)
-COLLECTION_MODE = "full"  # "metadata" | "transcript" | "full"
-
-# Derived flags (set by COLLECTION_MODE or CLI --mode)
-COLLECT_TRANSCRIPTS = COLLECTION_MODE in ("transcript", "full")
-COLLECT_VIDEOS = COLLECTION_MODE == "full"
-
 # Metadata JSON directory: one file per video, filename = {video_id}.json
 METADATA_JSON_DIR = "data/json"
 

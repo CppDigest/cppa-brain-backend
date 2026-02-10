@@ -2,15 +2,15 @@
 
 Scrapes YouTube C++ videos using YouTube Data API v3 and yt-dlp.
 
-## Collection Modes
+## Download Modes
 
-| Mode           | Collects                        | Skips if exists           |
-| -------------- | ------------------------------- | ------------------------- |
-| **metadata**   | JSON metadata only              | `{video_id}.json`         |
-| **transcript** | JSON + transcript (VTT)         | JSON + transcript         |
-| **full**       | JSON + transcript + video (MP4) | JSON + transcript + video |
+| CLI flag        | Collects                         | Skips if exists           |
+| --------------- | --------------------------------- | ------------------------- |
+| (default)       | JSON metadata + transcript (VTT)  | JSON + transcript         |
+| `--need-video`  | JSON + transcript + video (MP4)   | JSON + transcript + video |
 
-Set in `yt_config.py` (`COLLECTION_MODE`) or via CLI (`--mode`).
+- Default: discover via search and download **transcripts** (and save metadata JSON).
+- `--need-video`: also download **videos** (MP4). Use with `--retry-downloads` to fill missing from existing `data/json`.
 
 ## Quick Start
 
@@ -21,14 +21,14 @@ pip install -r requirements.txt
 # Set API key: copy .env.template to .env and set YOUTUBE_API_KEY, or:
 export YOUTUBE_API_KEY="your-key"
 
-# Run with different modes
-python scraper.py --mode metadata          # Fast: JSON only
-python scraper.py --mode transcript        # Medium: JSON + transcripts
-python scraper.py --mode full              # Slow: JSON + transcripts + videos
+# Discover and download transcripts (default)
+python scraper.py
 
-# Limit terms and retry failed downloads
+# Download videos (for items in data/json)
+python scraper.py --need-video --retry-downloads
+
+# Limit search terms
 python scraper.py --limit 10
-python scraper.py --retry-downloads
 ```
 
 ## Prerequisites
@@ -37,7 +37,7 @@ python scraper.py --retry-downloads
 - **yt-dlp** and **yt-dlp-ejs** (for transcript/full modes)
 - **JavaScript runtime** for YouTube: **Deno** (recommended) or **Node.js** — required so yt-dlp can solve YouTube's n-challenge and get video formats. Without it you get "Only images are available" / "Requested format is not available".
 - **FFmpeg** (for full mode if merging formats)
-- **Cookies** (for transcript/full modes): if you see *"Sign in to confirm you're not a bot"*, see [Cookies (avoid bot detection)](#cookies-avoid-bot-detection) below.
+- **Cookies** (for transcript or video downloads): if you see *"Sign in to confirm you're not a bot"*, see [Cookies (avoid bot detection)](#cookies-avoid-bot-detection) below.
 
 ## Cookies (avoid bot detection)
 
@@ -64,7 +64,6 @@ Cookie files expire; re-export if the bot error returns.
 
 ### Key Settings
 
-- `COLLECTION_MODE`: `"metadata"` | `"transcript"` | `"full"` (default: `"full"`)
 - `CONCURRENT_FRAGMENTS`: `1` (sequential, prevents 403 errors)
 - `DOWNLOAD_SLEEP_INTERVAL`: `3.0` (seconds between requests)
 - `VIDEO_DOWNLOAD_DELAY`: `3.0` (seconds between videos)
@@ -85,17 +84,19 @@ Cookie files expire; re-export if the bot error returns.
 ## Output Structure
 
 ```
-data/youtube_cpp/
-├── json/{video_id}.json              # All modes
-├── transcripts/{video_id}.en.vtt     # transcript/full modes
-├── videos/{video_id}.mp4             # full mode only
-└── progress_youtube_cpp.json         # Progress tracking
+data/
+├── json/{video_id}.json              # Metadata (all runs)
+├── transcripts/{video_id}.en.vtt     # Transcripts (default or --need-video)
+├── videos/{video_id}.mp4             # Videos (only with --need-video)
+├── progress_youtube_cpp.json         # Progress tracking
+└── logs/youtube_cpp_scraper.log      # Log file
 ```
 
 ## Notes
 
 - Duplicate videos automatically skipped
 - Progress saved periodically (safe to interrupt)
-- Videos >4 hours skipped in full mode
-- Video format overridden to `best[ext=mp4][height<=720]` to reduce 403 errors
+- Videos >4 hours skipped when using `--need-video`
+- Video format: `best[ext=mp4]/best` to reduce 403 errors
 - Minimum 3s delay enforced in code (even if config is lower)
+- Default run: search + transcript download; use `--retry-downloads` to only fill missing content from existing `data/json`

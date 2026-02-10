@@ -61,14 +61,12 @@ class YouTubeCppScraper:
     Scraper for YouTube C++ videos using YouTube Data API v3.
     """
 
-    def __init__(
-        self,
-    ):
+    def __init__(self, need_video: bool = False):
         """
         Initialize scraper.
 
         Args:
-            delay: Delay between requests in seconds
+            need_video: If True, download video (MP4); if False, download transcript only.
         """
         
         self.visited_videos: Set[str] = self.get_existed_videos()
@@ -77,32 +75,32 @@ class YouTubeCppScraper:
 
         self.missing_videos: List[Dict[str, str]] = []
         self.video_ids = []
+        self.need_video = need_video
 
         self.ydl_opts = None
-        if yt_config.COLLECT_VIDEOS or yt_config.COLLECT_TRANSCRIPTS:
-            self._setup_ytdlp()
+        self._setup_ytdlp()
 
         ensure_directories()
 
         logger.info(
             "Scraper initialized: mode=%s, delay=%s",
-            yt_config.COLLECTION_MODE,
+            "need_video" if self.need_video else "need_transcript",
             yt_config.RECOMMENDED_DELAY_SECONDS,
         )
-        if yt_config.COLLECT_VIDEOS:
+        if self.need_video:
             logger.info("Video download enabled: %s", yt_config.VIDEO_DOWNLOAD_DIR)
-        if yt_config.COLLECT_TRANSCRIPTS:
+        else:
             logger.info("Transcript download enabled: %s", yt_config.TRANSCRIPT_DIR)
 
     def get_existed_videos(self) -> Set[str]:
         """Load set of video IDs that already have output (for skip logic)."""
 
-        if yt_config.COLLECT_VIDEOS:
+        if self.need_video:
             video_dir = Path(yt_config.VIDEO_DOWNLOAD_DIR)
             if video_dir.exists():
                 return {f.stem for f in video_dir.glob("*.mp4")}
 
-        if yt_config.COLLECT_TRANSCRIPTS:
+        if not self.need_video:
             trans_dir = Path(yt_config.TRANSCRIPT_DIR)
             if trans_dir.exists():
                 return {f.stem.split(".")[0] for f in trans_dir.glob("*.vtt")}
@@ -130,12 +128,9 @@ class YouTubeCppScraper:
     def _setup_ytdlp(self):
         """Setup yt-dlp options for video and transcript download."""
 
-        Path(yt_config.TRANSCRIPT_DIR).mkdir(parents=True, exist_ok=True)
-
-        if yt_config.COLLECT_VIDEOS:
+        if self.need_video:
             Path(yt_config.VIDEO_DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
-        if yt_config.COLLECT_VIDEOS:
             outtmpl = str(Path(yt_config.VIDEO_DOWNLOAD_DIR) / "%(id)s.%(ext)s")
             self.ydl_opts = {
                 "format": "best[ext=mp4]/best",
@@ -164,7 +159,7 @@ class YouTubeCppScraper:
                 "sleep_interval_subtitles": yt_config.DOWNLOAD_SLEEP_INTERVAL,
             }
         )
-        # Use cookies to avoid "Sign in to confirm you're not a bot"
+        # Use cookies to avoid "Sign in to confirm you're not a bot" (for both video and transcript)
         if yt_config.YT_COOKIES_FILE and Path(yt_config.YT_COOKIES_FILE).exists():
             self.ydl_opts["cookiefile"] = yt_config.YT_COOKIES_FILE
             logger.info("Using cookies from file: %s", yt_config.YT_COOKIES_FILE)
@@ -364,7 +359,7 @@ class YouTubeCppScraper:
         if duration_seconds < yt_config.MIN_DURATION_SECONDS:
             return False
 
-        if (
+        if (self.need_video and
             yt_config.MAX_DURATION_SECONDS
             and duration_seconds > yt_config.MAX_DURATION_SECONDS
         ):
@@ -383,7 +378,9 @@ class YouTubeCppScraper:
 
         Args:
             video_id: YouTube video ID
-            video_url: Full YouTube video URL
+
+        Returns:
+            True if download completed successfully.
         """
         if not self.ydl_opts:
             return False
@@ -394,7 +391,7 @@ class YouTubeCppScraper:
             ydl.download([video_url])
 
         # Move subtitle files to transcript directory if needed
-        if yt_config.COLLECT_VIDEOS:
+        if self.need_video:
             self._move_subtitles_to_transcript_dir(video_id)
 
         logger.debug("Downloaded video/transcript for %s", video_id)
@@ -480,7 +477,7 @@ class YouTubeCppScraper:
                 logger.error("Error searching for '%s': %s", search_term, e)
                 break
 
-        if yt_config.COLLECT_TRANSCRIPTS:
+        if not self.need_video:
             self.content_process(video_infos=search_results)
 
         elapsed = time.time() - start_time
@@ -581,14 +578,18 @@ def main():
     )
     parser.add_argument(
         "--retry-downloads",
-        default=True,
         action="store_true",
-        help="Retry downloading videos that have metadata but missing file(s)",
+        help="Only retry downloads for videos that have metadata JSON but missing transcript/video",
     )
-
+    parser.add_argument(
+        "--need-video",
+        default=False,
+        action="store_true",
+        help="Download videos",
+    )
     args = parser.parse_args()
 
-    scraper = YouTubeCppScraper()
+    scraper = YouTubeCppScraper(need_video=args.need_video)
 
     if args.retry_downloads:
         stats = scraper.content_process()
