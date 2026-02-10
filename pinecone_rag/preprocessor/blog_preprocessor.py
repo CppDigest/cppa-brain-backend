@@ -28,11 +28,13 @@ from preprocessor.utility import (
 logger = logging.getLogger(__name__)
 
 
-def _json_to_document(json_path: Path, data: Dict[str, Any]) -> Optional[Document]:
+def _json_to_document(json_path: Path) -> Optional[Document]:
     """
     Build one Document from a blog JSON record.
     doc_id = url (link); type = blog-html; timestamp from published_parsed or filename.
     """
+    raw = json_path.read_text(encoding="utf-8", errors="replace")
+    data = json.loads(raw)
     url = data.get("link") or data.get("url") or ""
     if not url:
         logger.debug("Skip %s: no link/url", json_path.name)
@@ -85,9 +87,7 @@ class BlogPreprocessor:
         documents: List[Document] = []
         for json_path in json_paths:
             try:
-                raw = json_path.read_text(encoding="utf-8", errors="replace")
-                data = json.loads(raw)
-                doc = _json_to_document(json_path, data)
+                doc = _json_to_document(json_path)
                 if doc is not None:
                     documents.append(doc)
             except (json.JSONDecodeError, OSError) as e:
