@@ -1,0 +1,301 @@
+"""
+Blog preprocessor: JSON files and PDFs under data/blog-posts.
+
+Processes all JSON files (blog-html docs) and PDF files (via PdfPreprocessor)
+under data/blog-posts to produce LangChain Documents with consistent metadata:
+doc_id, title, url, author, timestamp, type, etc.
+
+- JSON: doc_id = url (link), type = "blog-html", timestamp from published_parsed
+  or parsed from filename if published_parsed is null.
+- PDF: uses PdfPreprocessor per author subdir; metadata from pdf_preprocessor.
+"""
+
+import hashlib
+import json
+import logging
+import re
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+from langchain_core.documents import Document
+
+from config import BlogConfig, BlogPdfConfig
+from preprocessor.pdf_preprocessor import PdfPreprocessor
+from preprocessor.utility import (
+    sanitize_path_component,
+    timestamp_from_filename,
+    timestamp_from_published,
+    validate_content_length,
+)
+
+logger = logging.getLogger(__name__)
+
+# Markdown horizontal rule between title, meta, and content
+MD_SPLIT_LINE = "---"
+
+# Main section keywords for blog-pdf: lines that become ### Section (case-insensitive)
+PDF_SECTION_KEYWORDS = frozenset(
+    {
+        "abstract",
+        "introduction",
+        "references",
+        "bibliography",
+        "conclusion",
+        "conclusions",
+        "appendix",
+        "acknowledgments",
+        "acknowledgements",
+        "overview",
+        "background",
+        "related work",
+        "discussion",
+        "results",
+        "method",
+        "methods",
+        "implementation",
+        "summary",
+        "preface",
+        "foreword",
+        "table of contents",
+        "contents",
+        "index",
+    }
+)
+
+
+def _normalize_blog_pdf_content(content: str) -> str:
+    """
+    Normalize content from blog-pdf: join lines ending with hyphen, add ### for section headers.
+    """
+    if not content or not content.strip():
+        return content
+    lines = content.split("\n")
+    # 1) Join lines that end with '-' (hyphenation) with the next line, removing the '-'
+    merged: List[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        while line.rstrip().endswith("-") and i + 1 < len(lines):
+            line = line.rstrip()[:-1] + lines[i + 1].lstrip()
+            i += 1
+        merged.append(line)
+        i += 1
+    # 2) Prefix main section keywords with ###
+    result: List[str] = []
+    for line in merged:
+        stripped = line.strip()
+        # Remove leading numbering like "1." or "1. "
+        normalized = re.sub(r"^\s*\d+\.?\s*", "", stripped)
+        normalized_clean = normalized.strip()
+        if normalized_clean and normalized_clean.lower() in PDF_SECTION_KEYWORDS:
+            result.append("### " + normalized_clean)
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
+def _json_to_document(json_path: Path) -> Optional[Document]:
+    """
+    Build one Document from a blog JSON record.
+    doc_id = url (link); type = blog-html; timestamp from published_parsed or filename.
+    """
+    raw = json_path.read_text(encoding="utf-8", errors="replace")
+    data = json.loads(raw)
+    url = data.get("link") or data.get("url") or ""
+    if not url:
+        logger.debug("Skip %s: no link/url", json_path.name)
+        return None
+    url = url.replace(".html.html", ".html")
+    title = (data.get("title") or "").strip()
+    author = (data.get("author") or "").strip()
+    published_parsed = data.get("published_parsed")
+    timestamp = None
+    if published_parsed is None or published_parsed == "":
+        timestamp = timestamp_from_filename(json_path.name)
+    else:
+        timestamp = timestamp_from_published(published_parsed)
+
+    content = (data.get("content") or data.get("summary") or "").strip()
+    if not validate_content_length(content, min_length=50):
+        logger.debug("Skip %s: content too short", json_path.name)
+        return None
+
+    meta = {
+        "title": title,
+        "url": url,
+        "author": author,
+        "timestamp": timestamp,
+        "type": "blog-html",
+    }
+    return Document(page_content=content, metadata=meta)
+
+
+class BlogPreprocessor:
+    """
+    Process all blog JSON files and PDFs under data/blog-posts.
+
+    JSON files become one Document each (type blog-html). PDFs are processed
+    via PdfPreprocessor per author subdir (type blog-pdf, metadata from pdf_preprocessor).
+    """
+
+    def __init__(self, config: Optional[BlogConfig] = None):
+        self.config = config or BlogConfig()
+        self.data_dir = Path(self.config.data_dir)
+        self.include_pdf = self.config.include_pdf
+
+    def _load_json_documents(
+        self, limit: Optional[int] = None
+    ) -> Tuple[List[Document], int]:
+        """Load all JSON files under data_dir. Returns (documents, count)."""
+        json_paths = sorted(self.data_dir.rglob("*.json"))
+        if limit is not None:
+            json_paths = json_paths[:limit]
+        documents: List[Document] = []
+        for json_path in json_paths:
+            try:
+                doc = _json_to_document(json_path)
+                if doc is not None:
+                    documents.append(doc)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.debug("Skip %s: %s", json_path.name, e)
+        return documents, len(documents)
+
+    def _load_pdf_documents(self, documents: List[Document]) -> None:
+        """Extend documents with PDF page docs from each author subdir (in place)."""
+        for subdir in sorted(self.data_dir.iterdir()):
+            if not subdir.is_dir():
+                continue
+            if not list(subdir.glob("*.pdf")):
+                continue
+            pdf_config = BlogPdfConfig(
+                data_dir=str(subdir),
+                author=subdir.name,
+                namespace=self.config.namespace,
+                source_url=_default_source_url_for_author(subdir.name),
+            )
+            try:
+                documents.extend(PdfPreprocessor(config=pdf_config).load_documents())
+            except (OSError, ImportError) as e:
+                logger.warning("Skip PDFs in %s: %s", subdir.name, e)
+            except Exception as e:  # pylint: disable=broad-except
+                # Skip malformed or unsupported PDF dir without failing the batch
+                logger.warning("Skip PDFs in %s: %s", subdir.name, e)
+
+    def load_documents(self, limit: Optional[int] = None) -> List[Document]:
+        """
+        Load JSON and (optionally) PDF documents from data/blog-posts.
+
+        Returns a single list: JSON docs (blog-html) first, then PDF page docs (blog-pdf).
+        """
+        if not self.data_dir.exists():
+            logger.warning("Blog data dir does not exist: %s", self.data_dir)
+            return []
+
+        documents, json_count = self._load_json_documents(limit=limit)
+        logger.info("Loaded %d blog-html documents from JSON", json_count)
+
+        if self.include_pdf:
+            self._load_pdf_documents(documents)
+
+        logger.info(
+            "Blog preprocessor total: %d documents (%d JSON + %d PDF pages)",
+            len(documents),
+            json_count,
+            len(documents) - json_count,
+        )
+        return documents
+
+    def convert_md(
+        self,
+        output_dir: Optional[Path] = None,
+        limit: Optional[int] = None,
+    ) -> int:
+        """
+        Convert blog documents (from load_documents) to markdown files.
+
+        Writes one .md per document to:
+          {output_dir}/{author_name}/{original_file_name}.md
+
+        Structure: title (# title), meta (author, url, published time ISO, type),
+        content. Filename is derived from title + url hash when original path is unknown.
+
+        Args:
+            output_dir: Base directory (default: data/blog-posts/md).
+            limit: Max number of documents to convert (passed to load_documents).
+
+        Returns:
+            Number of markdown files written.
+        """
+        base = Path(output_dir) if output_dir else self.data_dir / "md"
+        base.mkdir(parents=True, exist_ok=True)
+
+        documents = self.load_documents(limit=limit)
+        written = 0
+        for doc in documents:
+            try:
+                meta = doc.metadata or {}
+                author = sanitize_path_component(
+                    (meta.get("author") or "unknown").strip()
+                )
+                title = (meta.get("title") or "untitled").strip()
+                url = (meta.get("url") or "").strip()
+                doc_type = meta.get("type") or "blog-html"
+                timestamp = meta.get("timestamp")
+                if timestamp is not None and isinstance(timestamp, (int, float)):
+                    try:
+                        published_iso = (
+                            datetime.utcfromtimestamp(float(timestamp)).isoformat()
+                            + "Z"
+                        )
+                    except (TypeError, ValueError, OSError):
+                        published_iso = ""
+                else:
+                    published_iso = ""
+
+                slug = sanitize_path_component(title, max_length=80)
+                file_name = f"{published_iso[:10]}_{slug}.md"
+                out_path = base / author / file_name
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+
+                title_line = f"# {title}"
+                meta_lines = [
+                    f"author: {meta.get('author', '')}",
+                    f"url: {url}",
+                    f"published: {published_iso}",
+                    f"type: {doc_type}",
+                ]
+                content = doc.page_content or ""
+                if doc_type == "blog-pdf":
+                    content = _normalize_blog_pdf_content(content)
+                md_body = "\n\n".join(
+                    [
+                        title_line,
+                        MD_SPLIT_LINE,
+                        "  \n".join(meta_lines),
+                        MD_SPLIT_LINE,
+                        content,
+                    ]
+                )
+                out_path.write_text(md_body, encoding="utf-8")
+                written += 1
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("Failed to convert blog doc to MD: %s", e)
+        logger.info("Wrote %d blog markdown files to %s", written, base)
+        return written
+
+
+def _default_source_url_for_author(author: str) -> str:
+    """Default base URL for an author's PDFs (stroustrup.com, etc.)."""
+    lower = author.lower()
+    if "stroustrup" in lower:
+        return "https://stroustrup.com"
+    if "sutter" in lower:
+        return "https://herbsutter.com"
+    if "boccara" in lower:
+        return "https://www.fluentcpp.com"
+    if "grimm" in lower:
+        return "https://www.modernescpp.com"
+    if "niebler" in lower:
+        return "https://ericniebler.com"
+    return "https://example.com"
