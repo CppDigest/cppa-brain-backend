@@ -506,6 +506,7 @@ def safe_int(value: Any, default: int = 0) -> int:
     try:
         if isinstance(value, str):
             value = value.strip()
+            value = value.replace(",", "").replace(" ", "")
             if not value:
                 return default
             # Handle K (thousands) or M (millions) suffix
