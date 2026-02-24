@@ -81,7 +81,7 @@ _Share = each category’s percentage of total cost._
 
 | Category                          |         Cost | Share of total |
 | --------------------------------- | -----------: | -------------: |
-| Inference (embedding + rerank)    |  **$526.18** |      **65.7%** |
+| Inference (embedding + rerank)    |  **$526.18** |      **65.6%** |
 | Database (write + storage + read) |  **$275.79** |      **34.4%** |
 | **Total**                         | **~$801.97** |       **100%** |
 
