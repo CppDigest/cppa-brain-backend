@@ -1,9 +1,14 @@
 """
-GitHub issue/PR preprocessor for Pinecone RAG.
+GitHub issue preprocessor for Pinecone RAG (LLVM only).
 
-Loads GitHub issue or PR JSON files from data/github (e.g. data/github/Clang/issue/84062.json),
-extracts issue_info or pr_info and comments, and produces LangChain Documents with metadata:
-doc_id, title, url, author, timestamp, type (github-issue | github-pr), repository, number, state, labels.
+Loads GitHub issue JSON files from ``data/github/**/issue/*.json`` (e.g.
+``data/github/Clang/issue/84062.json``), extracts ``issue_info`` and comments,
+and produces LangChain Documents for chunking and embedding. Only issues from the
+LLVM GitHub organization (e.g. llvm/llvm-project) are included; others are skipped.
+
+Each Document has metadata: title, url, author, number, state, state_reason,
+created_at, updated_at, closed_at, and type ``"issue"``. Content is built from
+labels, body, and comment threads.
 """
 
 import json
@@ -20,16 +25,32 @@ logger = logging.getLogger(__name__)
 
 
 def _get_nested(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
-    """Get nested key from dict; return default if any key is missing."""
+    """Get a nested key from a dict by path; return default if any key is missing.
+
+    Args:
+        data: Root dictionary to traverse.
+        *keys: Sequence of keys to follow (e.g. "user", "login").
+        default: Value to return if the path is missing or a step is not a dict.
+
+    Returns:
+        The value at the key path, or default.
+    """
+    if not isinstance(data, dict):
+        return default
     for key in keys:
-        if not isinstance(data, dict):
-            return default
         data = data.get(key, default)
     return data
 
 
 def _extract_labels(info: Dict[str, Any]) -> List[str]:
-    """Extract label names from issue/PR info."""
+    """Extract label names from issue info.
+
+    Args:
+        info: GitHub issue object containing a "labels" array.
+
+    Returns:
+        List of label name strings (from each label's "name" field or str(label)).
+    """
     labels_raw = info.get("labels") or []
     return [
         lb.get("name") if isinstance(lb, dict) else str(lb) for lb in labels_raw if lb
@@ -39,11 +60,21 @@ def _extract_labels(info: Dict[str, Any]) -> List[str]:
 def _build_content_parts(
     labels: List[str], body: str, comments: List[Any]
 ) -> List[str]:
-    """Build list of content segments: title, body, then each comment with header."""
+    """Build list of content segments for the Document page_content.
+
+    Args:
+        labels: Label names to prefix (optional "Labels: ..." line).
+        body: Issue body text.
+        comments: List of comment dicts with body, user.login, created_at.
+
+    Returns:
+        List of strings to be joined: labels line (if any), body, then each
+        comment with a "--- Comment by {user} ({date}) ---" header.
+    """
     parts = [f"Labels: {', '.join(labels)}\n\n", body] if labels else [body]
     for com in comments:
         com_body = (com.get("body") or "").strip()
-        if not com_body or com_body == "":
+        if not com_body:
             continue
         com_user = _get_nested(com, "user", "login", default="") or ""
         com_created = com.get("created_at") or ""
@@ -57,12 +88,19 @@ def _info_to_document(
     json_path: Path,
     min_content_length: int,
 ) -> Optional[Document]:
-    """
-    Build one Document from GitHub issue or PR info dict and comments list.
+    """Build one Document from GitHub issue info and comments.
 
-    Shared by issue and PR; doc_type is "github-issue" or "github-pr".
+    Args:
+        info: GitHub issue object (title, body, user, state, labels, etc.).
+        comments: List of comment dicts (body, user, created_at).
+        json_path: Path to the source JSON file (used for logging).
+        min_content_length: Minimum character length for content; shorter skips.
+
+    Returns:
+        A Document with combined content (labels, body, comments) and metadata,
+        or None if html_url is missing or content is too short.
     """
-    html_url = info.get("html_url") or info.get("url") or ""
+    html_url = info.get("html_url", "").strip()
     if not html_url:
         return None
 
@@ -71,9 +109,11 @@ def _info_to_document(
     author = _get_nested(info, "user", "login", default="") or ""
     created_at = get_timestamp_from_date(info.get("created_at"))
     updated_at = get_timestamp_from_date(info.get("updated_at"))
-    closed_at = get_timestamp_from_date(
-        info.get("closed_at", info.get("pushed_at", ""))
-    )
+    closed_at = info.get("closed_at")
+    if closed_at:
+        closed_at = get_timestamp_from_date(closed_at)
+    else:
+        closed_at = 0.0
     labels = _extract_labels(info)
     state = info.get("state", "") or ""
     state_reason = info.get("state_reason", "") or ""
@@ -106,7 +146,16 @@ def _issue_json_to_document(
     data: Dict[str, Any],
     min_content_length: int,
 ) -> Optional[Document]:
-    """Build one Document from a GitHub issue JSON file (issue_info + comments)."""
+    """Build one Document from a GitHub issue JSON file (issue_info + comments).
+
+    Args:
+        json_path: Path to the JSON file (for logging).
+        data: Parsed JSON root; must contain "issue_info" and optionally "comments".
+        min_content_length: Minimum content length; shorter documents are skipped.
+
+    Returns:
+        A Document with type "issue", or None if issue_info is missing or invalid.
+    """
     info = data.get("issue_info")
     if not info or not isinstance(info, dict):
         logger.debug("Skip %s: no issue_info", json_path.name)
@@ -115,62 +164,68 @@ def _issue_json_to_document(
     return _info_to_document(info, comments, json_path, min_content_length)
 
 
-def _pr_json_to_document(
-    json_path: Path,
-    data: Dict[str, Any],
-    min_content_length: int,
-) -> Optional[Document]:
-    """Build one Document from a GitHub PR JSON file (pr_info + comments)."""
-    info = data.get("pr_info")
-    if not info or not isinstance(info, dict):
-        logger.debug("Skip %s: no pr_info", json_path.name)
-        return None
-    comments = data.get("comments") or []
-    if isinstance(comments, dict):
-        comments = []
-    return _info_to_document(info, comments, json_path, min_content_length, "github-pr")
-
-
 def _load_one_json(
     json_path: Path,
     min_content_length: int,
 ) -> Optional[Document]:
-    """Load one JSON file and return an issue or PR document, or None."""
+    """Load one JSON file and return an issue Document, or None.
+
+    Args:
+        json_path: Path to the JSON file.
+        min_content_length: Minimum content length; shorter documents are skipped.
+
+    Returns:
+        A Document for the issue, or None if the file is invalid, missing
+        issue_info, or content is too short.
+    """
     try:
-        path_str = str(json_path)
-        path_str = path_str.lower()
         raw = json_path.read_text(encoding="utf-8", errors="replace")
         data = json.loads(raw)
     except (json.JSONDecodeError, OSError) as e:
         logger.debug("Skip %s: %s", json_path.name, e)
         return None
 
-    if "issue_info" in data:
-        return _issue_json_to_document(json_path, data, min_content_length)
-    if "pr_info" in data:
-        return _pr_json_to_document(json_path, data, min_content_length)
-    logger.debug("Skip %s: no issue_info or pr_info", json_path.name)
-    return None
+    if not isinstance(data, dict):
+        logger.debug("Skip %s: JSON root is not an object", json_path.name)
+        return None
+    if "issue_info" not in data:
+        logger.debug("Skip %s: no issue_info", json_path.name)
+        return None
+    return _issue_json_to_document(json_path, data, min_content_length)
 
 
 class GitIssuePreprocessor:
-    """
-    Process GitHub issue/PR JSON files under data/github for RAG.
+    """Load LLVM GitHub issue JSON files and produce Documents.
 
-    Discovers all *.json under data_dir (e.g. data/github/Clang/issue/*.json),
-    parses issue_info or pr_info + comments, and produces one Document per file.
+    Discovers all ``*.json`` under ``config.data_dir / "issue"`` (e.g.
+    ``data/github/Clang/issue/*.json``), parses each as an issue with
+    issue_info and comments. Only issues from the LLVM GitHub organization
+    (e.g. llvm/llvm-project) are included; others are skipped. Returns a list
+    of LangChain Documents for RAG ingestion.
     """
 
     def __init__(self, config: Optional[GitConfig] = None):
+        """Initialize the preprocessor with optional GitConfig.
+
+        Args:
+            config: Git configuration (data_dir, min_content_length). If None,
+                uses default GitConfig().
+        """
         self.config = config or GitConfig()
         self.data_dir = Path(self.config.data_dir) / "issue"
         self.min_content_length = self.config.min_content_length
 
     def load_documents(self, limit: Optional[int] = None) -> List[Document]:
-        """
-        Load all GitHub issue/PR JSON files and convert to Documents.
+        """Load issue JSON files from the configured issue directory and convert to Documents.
 
-        Returns one Document per JSON file (issue or PR with comments).
+        Args:
+            limit: Optional maximum number of JSON files to process (by sorted path).
+                If None, all discovered *.json files are processed.
+
+        Returns:
+            List of Documents (one per valid issue JSON file) with combined
+            content (labels, body, comments) and metadata. Skips invalid files
+            and those with content below min_content_length.
         """
         if not self.data_dir.exists():
             logger.warning("Git data dir does not exist: %s", self.data_dir)
@@ -187,7 +242,7 @@ class GitIssuePreprocessor:
                 documents.append(doc)
 
         logger.info(
-            "Loaded %d GitHub issue/PR documents from %s",
+            "Loaded %d GitHub issue documents from %s",
             len(documents),
             self.data_dir,
         )
