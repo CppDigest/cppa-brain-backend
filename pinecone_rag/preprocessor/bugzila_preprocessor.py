@@ -9,24 +9,14 @@ Expected JSON shape:
 
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
 
+from preprocessor.utility import get_timestamp_from_date
+
 logger = logging.getLogger(__name__)
-
-
-def _to_timestamp(value: Optional[str]) -> float:
-    """Convert ISO datetime string to Unix timestamp (UTC)."""
-    if not value:
-        return 0.0
-    try:
-        dt = datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
-        return dt.timestamp()
-    except Exception:
-        return 0.0
 
 
 def _is_valid_content(text: str, min_length: int) -> bool:
@@ -98,9 +88,9 @@ def _load_bug_document(json_path: Path, min_content_length: int) -> Optional[Doc
         "author": bug.get("creator", "") or "",
         "state": bug.get("status", "") or "",
         "state_reason": bug.get("resolution", "") or "",
-        "created_at": _to_timestamp(created),
-        "updated_at": _to_timestamp(last_change),
-        "closed_at": 0.0 if is_open else _to_timestamp(last_change),
+        "created_at": get_timestamp_from_date(created or "", 0.0),
+        "updated_at": get_timestamp_from_date(last_change or "", 0.0),
+        "closed_at": 0.0 if is_open else get_timestamp_from_date(last_change or "", 0.0),
     }
 
     return Document(page_content=content, metadata=metadata)
