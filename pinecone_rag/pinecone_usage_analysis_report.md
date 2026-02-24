@@ -50,26 +50,26 @@ Current embed runtime settings confirmed from live indexes:
 
 **Vectors by namespace (Dense vs Sparse, delta = Dense − Sparse):**
 
-| Namespace         |    Dense |   Sparse | Delta |
-| ----------------- | -------: | -------: | ----: |
-| blog-posts        |   30,207 |   30,207 |     0 |
-| cpp-documentation |  353,664 |  353,659 |    +5 |
-| github-clang      | 2,639,888 | 2,639,792 |   +96 |
-| mailing           |  680,628 |  680,628 |     0 |
-| slack-Cpplang     |  387,723 |  387,560 |  +163 |
-| wg21-papers       | 1,470,982 | 1,470,982 |     0 |
-| youtube-scripts   |  590,945 |  589,025 | +1,920 |
+| Namespace         |     Dense |    Sparse |  Delta |
+| ----------------- | --------: | --------: | -----: |
+| blog-posts        |    30,207 |    30,207 |      0 |
+| cpp-documentation |   353,664 |   353,659 |     +5 |
+| github-clang      | 2,639,888 | 2,639,792 |    +96 |
+| mailing           |   680,628 |   680,628 |      0 |
+| slack-Cpplang     |   387,723 |   387,560 |   +163 |
+| wg21-papers       | 1,470,982 | 1,470,982 |      0 |
+| youtube-scripts   |   590,945 |   589,025 | +1,920 |
 
 #### Namespaces with dense/sparse mismatch
 
 The following namespaces have different vector counts in the dense and sparse indexes. A common cause is the **sparse embedding model**: the same text is upserted to both indexes, but the sparse model can sometimes return vectors with **very few or zero non-zero elements**. Pinecone’s API requires sparse vectors to have at least one element in `indices`/`values` ([Upsert vectors](https://docs.pinecone.io/reference/api/data-plane/upsert) — `SparseValues` has `minLength: 1`). Records with empty or near-empty sparse embeddings can therefore be stored in the dense index but fail or be skipped for the sparse index, producing a positive delta (dense > sparse). Other causes include partial runs or failures on one side.
 
-| Namespace         |    Dense |   Sparse | Delta |
-| ----------------- | -------: | -------: | ----: |
-| youtube-scripts   |  590,945 |  589,025 | +1,920 |
-| github-clang      | 2,639,888 | 2,639,792 |   +96 |
-| slack-Cpplang     |  387,723 |  387,560 |  +163 |
-| cpp-documentation |  353,664 |  353,659 |    +5 |
+| Namespace         |     Dense |    Sparse |  Delta |
+| ----------------- | --------: | --------: | -----: |
+| youtube-scripts   |   590,945 |   589,025 | +1,920 |
+| github-clang      | 2,639,888 | 2,639,792 |    +96 |
+| slack-Cpplang     |   387,723 |   387,560 |   +163 |
+| cpp-documentation |   353,664 |   353,659 |     +5 |
 
 See [Empty Sparse Vector](https://community.pinecone.io/t/empty-sparse-vector/5151) and [Upsert vectors](https://docs.pinecone.io/reference/api/data-plane/upsert).
 
@@ -154,9 +154,9 @@ chunk_overlap = 300
 - Practical savings typically in the 20–40% range (dataset-dependent)
 
 **Safety note**  
-`2000` chars is usually close to ~500 tokens, which is near but generally within sparse `512` max tokens.
+`2000` chars is usually close to ~500 tokens, which is near but generally within sparse `2048` max tokens(default 512).
 
-Reference: [Upsert limits](https://docs.pinecone.io/guides/index-data/upsert-data#upsert-limits)
+Reference: [sparse-model](https://docs.pinecone.io/models/llama-text-embed-v2)
 
 ---
 
@@ -164,7 +164,7 @@ Reference: [Upsert limits](https://docs.pinecone.io/guides/index-data/upsert-dat
 
 **Same goal, different situations:**
 
-- **Skip-existing-ID (upsert guard):** I implemented skip-existing-ID logic in `ingestion.py`. When upserting, if the record ID already exists, we skip it—no re-embed, no re-upsert. This has limited impact if I do not rerun the same data, but it protects against accidental duplicate ingestion and recovery reruns.  
+- **Skip-existing-ID (upsert guard):** I implemented skip-existing-ID logic in `ingestion.py`. When upserting, if the record ID already exists, we skip it—no re-embed, no re-upsert. This has limited impact if I do not rerun the same data, but it protects against accidental duplicate ingestion and recovery reruns.
 - **Metadata update API (metadata-only changes):** When only metadata changes (e.g. labels, status, source URL), use Pinecone’s **update** API instead of re-ingesting: no re-embedding, no full upsert. See §4 below for technique, when to apply it, and cost evidence.
 
 Reference: [Upsert records](https://docs.pinecone.io/guides/index-data/upsert-data)
@@ -187,14 +187,16 @@ Use Pinecone’s **metadata update** API instead of re-ingesting vectors when on
 **When to apply**  
 When a document’s **metadata** changes (e.g. labels, status, timestamps, source URL) but the **content** is unchanged. If content changed, a full re-embed and upsert is still required.
 
-**Cost/IO benefit**  
+**Cost/IO benefit**
+
 - Avoids **re-embedding** (no extra embedding inference or tokens).
 - Avoids **full write** of the vector; only metadata is updated.
 - Reduces write-unit and embedding cost on metadata-only refresh or correction runs.
 
-**Evidence (Pinecone docs)**  
-- **Embedding:** [Understanding cost](https://docs.pinecone.io/guides/manage-cost/understanding-cost) states that embedding cost is per token. Metadata-only update does not call the embedding API, so **embedding cost is zero** for those operations. In this setup, inference (embedding + rerank) is the main cost (e.g. 65.7%), so skipping re-embedding is where most of the saving comes from.  
-- **Write units:** The same guide states that [Update](https://docs.pinecone.io/guides/manage-cost/understanding-cost#update) uses 1 WU per 1 KB of the new and existing record (min 5 WUs per request). For metadata-only updates the request payload is small (no vector), so write-unit cost per record is lower than a full upsert of the same record.  
+**Evidence (Pinecone docs)**
+
+- **Embedding:** [Understanding cost](https://docs.pinecone.io/guides/manage-cost/understanding-cost) states that embedding cost is per token. Metadata-only update does not call the embedding API, so **embedding cost is zero** for those operations. In this setup, inference (embedding + rerank) is the main cost (e.g. 65.7%), so skipping re-embedding is where most of the saving comes from.
+- **Write units:** The same guide states that [Update](https://docs.pinecone.io/guides/manage-cost/understanding-cost#update) uses 1 WU per 1 KB of the new and existing record (min 5 WUs per request). For metadata-only updates the request payload is small (no vector), so write-unit cost per record is lower than a full upsert of the same record.
 - **Update behavior:** [Update records](https://docs.pinecone.io/guides/manage-data/update-data) confirms that when updating metadata, only the specified metadata fields are modified; vector values are unchanged, so no re-embedding or full-record overwrite is needed.
 
 Reference: [Update vectors](https://docs.pinecone.io/guides/manage-data/update-data)
