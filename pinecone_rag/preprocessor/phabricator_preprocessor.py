@@ -11,7 +11,7 @@ Expected markdown header:
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -25,7 +25,6 @@ _HEADER_RE = re.compile(
 _USERNAME_RE = re.compile(r"^>\s*Username:\s*(.+?)\s*$", re.MULTILINE)
 _CREATED_AT_RE = re.compile(r"^>\s*Created at:\s*(.+?)\s*$", re.MULTILINE)
 _URL_RE = re.compile(r"^>\s*Url:\s*(https?://\S+)\s*$", re.MULTILINE)
-_COMMENT_RE = re.compile(r"^##\s*Comment\s+\d+", re.MULTILINE)
 
 _CLOSED_STATES = {"closed", "abandoned", "merged"}
 
@@ -44,8 +43,10 @@ def _parse_created_at_to_timestamp(value: str) -> float:
     ]
     for pattern in patterns:
         try:
-            return datetime.strptime(value, pattern).timestamp()
-        except Exception:
+            dt = datetime.strptime(value, pattern).replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            logger.debug("Date parse failed for pattern '%s': %s", pattern, value)
             continue
     return 0.0
 
@@ -81,7 +82,7 @@ def _extract_metadata(md_text: str, file_path: Path) -> Dict[str, Any]:
     ]
     valid_timestamps = [ts for ts in all_timestamps if ts > 0.0]
 
-    created_at = valid_timestamps[0] if valid_timestamps else 0.0
+    created_at = min(valid_timestamps) if valid_timestamps else 0.0
     last_activity = max(valid_timestamps) if valid_timestamps else 0.0
     updated_at = last_activity
     closed_at = last_activity if state.lower() in _CLOSED_STATES else 0.0
