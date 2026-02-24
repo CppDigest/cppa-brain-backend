@@ -35,10 +35,12 @@ def _get_nested(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
     Returns:
         The value at the key path, or default.
     """
-    if not isinstance(data, dict):
-        return default
     for key in keys:
-        data = data.get(key, default)
+        if not isinstance(data, dict):
+            return default
+        if key not in data:
+            return default
+        data = data[key]
     return data
 
 
@@ -52,9 +54,17 @@ def _extract_labels(info: Dict[str, Any]) -> List[str]:
         List of label name strings (from each label's "name" field or str(label)).
     """
     labels_raw = info.get("labels") or []
-    return [
-        lb.get("name") if isinstance(lb, dict) else str(lb) for lb in labels_raw if lb
-    ]
+    labels: List[str] = []
+    for lb in labels_raw:
+        if not lb:
+            continue
+        if isinstance(lb, dict):
+            name = (lb.get("name") or "").strip()
+            if name:
+                labels.append(name)
+        else:
+            labels.append(str(lb))
+    return labels
 
 
 def _build_content_parts(
