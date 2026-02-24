@@ -1,12 +1,15 @@
 """
 GitHub PR preprocessor for Pinecone RAG.
 
-Reads PR JSON files under data/github/**/prs/*.json and builds one Document per PR.
-Uses pr_to_md.convert_pr_to_markdown for content; content is built without any datetime.
-Expected JSON shape:
-- pr_info: pull request metadata from GitHub API
-- comments: issue comments and/or review comments
-- reviews: PR review objects
+Reads PR JSON files under ``data/github/**/pr/*.json`` and builds one LangChain
+Document per PR. Content is produced by :func:`pr_to_md.convert_pr_to_markdown`
+without datetimes or PR title/state/URL in the body. Documents are used for
+chunking and embedding in the RAG pipeline.
+
+Expected JSON shape per file:
+    - pr_info: Pull request metadata from GitHub API (title, number, state, etc.).
+    - comments: List of issue or review comments.
+    - reviews: List of PR review objects (used for markdown conversion).
 """
 
 import json
@@ -24,7 +27,16 @@ logger = logging.getLogger(__name__)
 
 
 def _get_nested(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
-    """Get nested key from dict; return default when key path is missing."""
+    """Get a nested key from a dict by path; return default if any key is missing.
+
+    Args:
+        data: Root dictionary to traverse.
+        *keys: Sequence of keys to follow (e.g. "user", "login").
+        default: Value to return if the path is missing or a step is not a dict.
+
+    Returns:
+        The value at the key path, or default.
+    """
     current: Any = data
     for key in keys:
         if not isinstance(current, dict):
@@ -34,11 +46,30 @@ def _get_nested(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
 
 
 def _load_pr_document(json_path: Path, min_content_length: int) -> Optional[Document]:
-    """Load one PR JSON file and convert it into a Document."""
+    """Load one PR JSON file and convert it into a LangChain Document.
+
+    Expects JSON with pr_info, comments, and reviews. Content is built via
+    convert_pr_to_markdown (no datetime/title/state/URL). Documents below
+    min_content_length are skipped.
+
+    Args:
+        json_path: Path to the PR JSON file.
+        min_content_length: Minimum character length for page_content; shorter
+            content yields None.
+
+    Returns:
+        A Document with page_content (markdown) and metadata (type, number,
+        title, url, author, state, created_at, updated_at, closed_at), or None
+        if the file is invalid or content is too short.
+    """
     try:
         data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
     except (json.JSONDecodeError, OSError) as exc:
         logger.debug("Skip %s: %s", json_path.name, exc)
+        return None
+
+    if not isinstance(data, dict):
+        logger.debug("Skip %s: JSON root is not an object", json_path.name)
         return None
 
     pr_info = data.get("pr_info")
@@ -84,15 +115,36 @@ def _load_pr_document(json_path: Path, min_content_length: int) -> Optional[Docu
 
 
 class GitPrPreprocessor:
-    """Load GitHub PR JSON files from pr folders and produce Documents."""
+    """Load GitHub PR JSON files from the configured pr directory and produce Documents.
+
+    Discovers all ``*.json`` under ``config.data_dir / "pr"`` (e.g.
+    ``data/github/Org/repo/pr/*.json``), parses each as a PR with comments and
+    reviews, and returns a list of LangChain Documents for RAG ingestion.
+    """
 
     def __init__(self, config: Optional[GitConfig] = None):
+        """Initialize the preprocessor with optional GitConfig.
+
+        Args:
+            config: Git configuration (data_dir, min_content_length). If None,
+                uses default GitConfig().
+        """
         self.config = config or GitConfig()
         self.data_dir = Path(self.config.data_dir) / "pr"
         self.min_content_length = self.config.min_content_length
 
     def load_documents(self, limit: Optional[int] = None) -> List[Document]:
-        """Load PR JSON files from data/github/**/pr/*.json."""
+        """Load PR JSON files from the configured pr directory and convert to Documents.
+
+        Args:
+            limit: Optional maximum number of JSON files to process (by sorted path).
+                If None, all discovered *.json files are processed.
+
+        Returns:
+            List of Documents (one per valid PR JSON file) with markdown content
+            and PR metadata. Skips invalid files and those with content below
+            min_content_length.
+        """
         if not self.data_dir.exists():
             logger.warning("Git data dir does not exist: %s", self.data_dir)
             return []
