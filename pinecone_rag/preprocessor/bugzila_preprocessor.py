@@ -20,10 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 def _is_valid_content(text: str, min_length: int) -> bool:
+    """Return True if text is non-empty and has at least min_length characters (after strip)."""
     return bool(text and len(text.strip()) >= min_length)
 
 
 def _build_content(bug: Dict[str, Any], comments: List[Any]) -> str:
+    """Build plain-text document content from bug metadata and comments."""
     lines: List[str] = []
     lines.append(f"Product: {bug.get('product', '')}")
     lines.append(f"Component: {bug.get('component', '')}")
@@ -102,6 +104,7 @@ class BugIssuePreprocessor:
     def __init__(
         self, data_dir: str = "data/github/Clang/bugs", min_content_length: int = 10
     ):
+        """Initialize with the directory containing Bugzilla JSON files and minimum content length."""
         self.data_dir = Path(data_dir)
         self.min_content_length = min_content_length
 
