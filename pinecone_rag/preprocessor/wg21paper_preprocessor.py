@@ -14,6 +14,7 @@ from config import WG21Config
 from preprocessor.utility import (
     get_timestamp_from_date,
     validate_content_length,
+    clean_text,
 )
 
 
@@ -59,6 +60,9 @@ class WG21PaperPreprocessor:
             with open(self.metadata_file, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
+                    for key, value in row.items():
+                        if isinstance(value, str):
+                            row[key] = clean_text(value)
                     # Use local_path as primary key
                     local_path = row.get("local_path", "").strip()
                     filename = row.get("filename", "").strip()
@@ -142,7 +146,13 @@ class WG21PaperPreprocessor:
         # Get metadata fields
         url = metadata.get("url", "") if metadata else ""
         author = metadata.get("author", "").strip() if metadata else ""
-        authors = author.split(",") if author else ["unknown"]
+        if ", " not in author:
+            return None
+        authors = (
+            [name.strip() for name in author.split(",") if name.strip()]
+            if author
+            else ["unknown"]
+        )
         title = metadata.get("title", "").strip() if metadata else ""
         date_str = metadata.get("date", "") if metadata else ""
 

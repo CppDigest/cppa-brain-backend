@@ -6,7 +6,16 @@ Replace placeholders with actual API keys and endpoints.
 
 from typing import Optional
 from dataclasses import dataclass, field
+from enum import Enum
 import os
+
+
+class PineconeInstance(str, Enum):
+    """Selects which Pinecone API key (instance) to use for index/upsert operations."""
+
+    PUBLIC = "public"
+    PRIVATE = "private"
+
 
 try:
     from dotenv import load_dotenv
@@ -25,17 +34,18 @@ class PineconeConfig:
     IS_TEST = False
 
     api_key: str = os.getenv("PINECONE_API_KEY", "your-pinecone-api-key-here")
+    private_api_key: str = os.getenv("PINECONE_PRIVATE_API_KEY", "")
     environment: str = os.getenv("PINECONE_ENVIRONMENT", "us-central1")
     cloud: str = os.getenv("PINECONE_CLOUD", "gcp")
 
     index_name: str = os.getenv("PINECONE_INDEX_NAME", "rag-hybrid")
     # Note: dimension is automatically set by Pinecone when using integrated embeddings
     top_k: int = 5  # Default number of documents to retrieve
-    chunk_size: int = 1000
+    chunk_size: int = 2000
     # Document chunk size in characters
     # Note: Chunk size compatibility:
     # - llama-text-embed-v2 (dense): max 2048 tokens, recommends 400-500 tokens (~1600-2000 chars)
-    # - pinecone-sparse-english-v0 (sparse): default 512 tokens, max 2048 tokens (if configured)
+    # - pinecone-sparse-english-v0 (sparse): default 512 tokens, max 2048 tokens — configured via sparse_max_tokens
     # Current 1000 chars (~200-250 tokens) is safe for both models but smaller than optimal for dense.
     chunk_overlap: int = 200
     # Chunk overlap in characters
@@ -67,6 +77,18 @@ class EmbeddingConfig:
     pinecone_sparse_model: str = os.getenv(
         "PINECONE_SPARSE_EMBEDDING_MODEL", "pinecone-sparse-english-v0"
     )
+    # Truncation when input exceeds model limit: "END" (truncate) or "NONE" (error).
+    # See https://docs.pinecone.io/reference/api/2025-10/control-plane/create_for_model
+    embed_truncate: str = os.getenv("PINECONE_EMBED_TRUNCATE", "END")
+    # input_type for upsert; use "passage" for documents.
+    embed_write_input_type: str = os.getenv(
+        "PINECONE_EMBED_WRITE_INPUT_TYPE", "passage"
+    )
+    # input_type for search; use "query" for search text.
+    embed_read_input_type: str = os.getenv("PINECONE_EMBED_READ_INPUT_TYPE", "query")
+    # Max tokens per sequence for the sparse model (default 512, max 2048).
+    # See https://docs.pinecone.io/reference/api/2025-10/control-plane/create_for_model
+    sparse_max_tokens: int = int(os.getenv("PINECONE_SPARSE_MAX_TOKENS", "2048"))
 
 
 @dataclass
@@ -81,6 +103,17 @@ class CacheConfig:
 
 
 @dataclass
+class SourceBaseConfig:
+    """Base configuration for all source types"""
+
+    data_dir: str = os.getenv("DATA_DIR", "data")
+    md_data_dir: str = os.getenv("MD_DATA_DIR", "data/markdown")
+    namespace: str = os.getenv("NAMESPACE", "namespace")
+    is_chunked: bool = False
+    pinecone_instance: PineconeInstance = PineconeInstance.PUBLIC
+
+
+@dataclass
 class LoggingConfig:
     """Logging configuration"""
 
@@ -90,19 +123,27 @@ class LoggingConfig:
 
 
 @dataclass
-class MailConfig:
+class MailConfig(SourceBaseConfig):
     """Mail preprocessor configuration"""
 
     # mail_data_dir: str = os.getenv("MAIL_DATA_DIR", "data/message_by_thread/en")
-    mail_data_dir: str = os.getenv("MAIL_DATA_DIR", "data/message_by_thread/json")
-    markdown_data_dir: str = os.getenv(
-        "MARKDOWN_DATA_DIR", "data/message_by_thread/markdown"
-    )
+    data_dir: str = os.getenv("MAIL_DATA_DIR", "data/message_by_thread/json")
+    md_data_dir: str = os.getenv("MARKDOWN_DATA_DIR", "data/message_by_thread/markdown")
     namespace: str = os.getenv("MAIL_NAMESPACE", "mailing")
 
 
 @dataclass
-class DocuConfig:
+class ReflectorConfig(MailConfig):
+    """Reflector preprocessor configuration"""
+
+    data_dir: str = os.getenv("REFLECTOR_DATA_DIR", "data/reflector/json")
+    md_data_dir: str = os.getenv("REFLECTOR_MD_DATA_DIR", "data/reflector/markdown")
+    namespace: str = os.getenv("REFLECTOR_NAMESPACE", "wg21-reflector")
+    pinecone_instance: PineconeInstance = PineconeInstance.PRIVATE
+
+
+@dataclass
+class DocuConfig(SourceBaseConfig):
     """Documentation preprocessor configuration"""
 
     raw_data_dir: str = os.getenv("RAW_DATA_DIR", "data/cpp_documentation")
@@ -111,7 +152,7 @@ class DocuConfig:
 
 
 @dataclass
-class SlackConfig:
+class SlackConfig(SourceBaseConfig):
     """Slack database configuration"""
 
     db_host: str = os.getenv("SLACK_DB_HOST", "localhost")
@@ -128,7 +169,7 @@ class SlackConfig:
 
 
 @dataclass
-class WG21Config:
+class WG21Config(SourceBaseConfig):
     """WG21 paper preprocessor configuration"""
 
     data_dir: str = os.getenv("WG21_DATA_DIR", "data/wg21_paper_1989_2025")
@@ -136,34 +177,35 @@ class WG21Config:
 
 
 @dataclass
-class YouTubeConfig:
+class YouTubeConfig(SourceBaseConfig):
     """YouTube video preprocessor configuration"""
 
     transcripts_dir: str = os.getenv(
         "YOUTUBE_TRANSCRIPTS_DIR", "data/youtube/transcripts"
     )
     metainfo_json_dir: str = os.getenv(
-        "YOUTUBE_METAINFO_JSON_DIR", "data/youtube/metainfo/missing_json"
+        "YOUTUBE_METAINFO_JSON_DIR", "data/youtube/metainfo"
     )
     metainfo_raw_dir: Optional[str] = os.getenv("YOUTUBE_METAINFO_RAW_DIR", None)
     namespace: str = os.getenv("YOUTUBE_NAMESPACE", "youtube-scripts")
+    is_chunked: bool = True
 
 
 @dataclass
-class BlogPdfConfig:
+class BlogPdfConfig(SourceBaseConfig):
     """Blog PDF preprocessor configuration (e.g. Bjarne Stroustrup papers)"""
 
     data_dir: str = os.getenv(
         "BLOG_PDF_DATA_DIR",
         "data/blog-posts/Bjarne Stroustrup",
     )
-    namespace: str = os.getenv("BLOG_PDF_NAMESPACE", "stroustrup-papers")
+    namespace: str = os.getenv("BLOG_PDF_NAMESPACE", "blog-posts")
     author: str = os.getenv("BLOG_PDF_AUTHOR", "Bjarne Stroustrup")
     source_url: str = os.getenv("BLOG_PDF_SOURCE_URL", "https://www.stroustrup.com")
 
 
 @dataclass
-class BlogConfig:
+class BlogConfig(SourceBaseConfig):
     """Blog preprocessor configuration (JSON + PDF under data/blog-posts)"""
 
     data_dir: str = os.getenv("BLOG_DATA_DIR", "data/blog-posts")
@@ -176,11 +218,11 @@ class BlogConfig:
 
 
 @dataclass
-class GitConfig:
+class GitConfig(SourceBaseConfig):
     """GitHub issue/PR preprocessor configuration"""
 
-    data_dir: str = os.getenv("GIT_DATA_DIR", "data/github")
-    namespace: str = os.getenv("GIT_NAMESPACE", "github-compiler")
+    data_dir: str = os.getenv("GIT_DATA_DIR", "data/github/Clang")
+    namespace: str = os.getenv("GIT_NAMESPACE", "github-clang")
     min_content_length: int = int(os.getenv("GIT_MIN_CONTENT_LENGTH", "10"))
 
 

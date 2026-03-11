@@ -315,15 +315,26 @@ def clean_text(text: str, remove_extra_spaces: bool = True) -> str:
     if not text:
         return ""
 
+    from html import unescape
+
+    text = unescape(text)
+
     # Remove soft hyphens and other invisible characters
     text = (
         text.replace("\xad", "")
         .replace("\u200b", "")
         .replace("\u200c", "")
         .replace("\u200d", "")
+        .replace("\xa0", " ")
+        .replace("\u2002", " ")
+        .replace("\u2003", " ")
+        .replace("\u2026", "...")
+        .replace("\u202f", "")
+        .replace("\\u00A0", " ")
     )
 
     # Normalize line breaks
+    text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\r\n", "\n", text)  # Windows line breaks
     text = re.sub(r"\r", "\n", text)  # Old Mac line breaks
 
