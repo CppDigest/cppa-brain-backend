@@ -315,21 +315,31 @@ def clean_text(text: str, remove_extra_spaces: bool = True) -> str:
     if not text:
         return ""
 
+    from html import unescape
+
+    text = unescape(text)
+
     # Remove soft hyphens and other invisible characters
     text = (
         text.replace("\xad", "")
         .replace("\u200b", "")
         .replace("\u200c", "")
         .replace("\u200d", "")
+        .replace("\xa0", " ")
+        .replace("\u2002", " ")
+        .replace("\u2003", " ")
+        .replace("\u2026", "...")
+        .replace("\u202f", " ")  # Narrow no-break space -> space (preserve word boundary)
     )
 
-    # Normalize line breaks
+    # Normalize line breaks first so later steps can limit consecutive newlines
     text = re.sub(r"\r\n", "\n", text)  # Windows line breaks
     text = re.sub(r"\r", "\n", text)  # Old Mac line breaks
 
     if remove_extra_spaces:
-        # Remove multiple spaces
+        # Collapse horizontal whitespace (spaces, tabs) without removing newlines
         text = re.sub(r" +", " ", text)
+        text = re.sub(r"[^\S\n]+", " ", text)
         # Remove multiple newlines (keep max 2)
         text = re.sub(r"\n{3,}", "\n\n", text)
         # Remove spaces at start/end of lines
