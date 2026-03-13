@@ -128,7 +128,13 @@ class PineconeIngestion:
     def _active_api_key(self) -> str:
         """Return the API key for the currently selected instance."""
         if self.instance == PineconeInstance.PRIVATE:
-            return self.config.private_api_key
+            key = self.config.private_api_key
+            if not (key and key.strip()):
+                raise ValueError(
+                    "PineconeInstance.PRIVATE is selected but PINECONE_PRIVATE_API_KEY "
+                    "is not set or is empty. Set the environment variable before using the private instance."
+                )
+            return key
         return self.config.api_key
 
     def _get_or_create_indexes(self) -> None:
@@ -764,6 +770,14 @@ class PineconeIngestion:
         process_type: ProcessType = ProcessType.UPDATE_DOCUMENT_BY_ID,
     ) -> Dict[str, Any]:
         """Update metadata only for existing vectors by ID."""
+        if not records:
+            return self._build_process_result(
+                total_processed=0,
+                total=0,
+                errors=[],
+                failed_documents=[],
+                process_type=process_type,
+            )
         processed, errors, failed_documents = 0, [], []
         selected_keys = []
         if process_type == ProcessType.UPDATE_DOCUMENT_BY_ID:
@@ -789,11 +803,12 @@ class PineconeIngestion:
                     continue
                 update_metadata[key] = record[key]
             if not update_metadata:
+                missing = [k for k in selected_keys if k not in record]
                 failed_documents.append(
                     {
                         "doc_id": doc_id,
                         "type": record.get("type", "unknown"),
-                        "reason": f"Key {key} not found in record",
+                        "reason": f"Keys not found in record: {missing}",
                     }
                 )
                 continue
@@ -928,20 +943,6 @@ class PineconeIngestion:
         """Get statistics about the Pinecone indexes."""
         try:
             self._ensure_indexes_ready()
-            # spares_name=f"{self.config.index_name}-sparse"
-            # self.pc.configure_index(
-            #     name=spares_name,
-            #     embed={
-            #         "write_parameters": {
-            #             "max_tokens_per_sequence": 2048,
-            #             "truncate": "END",
-            #         },
-            #         "read_parameters": {
-            #             "max_tokens_per_sequence": 2048,
-            #             "truncate": "END",
-            #         },
-            #     },
-            # )
             dense_stats = self.dense_index.describe_index_stats()  # type: ignore
             sparse_stats = self.sparse_index.describe_index_stats()  # type: ignore
             return self._format_index_stats(dense_stats, sparse_stats)
