@@ -410,9 +410,14 @@ class PineconeIngestion:
 
             if process_mode == ProcessType.UPSERT:
                 if records:
-                    schema_fields = [
-                        k for k in records[0] if k not in ("id", "chunk_text")
-                    ]
+                    schema_fields = sorted(
+                        {
+                            k
+                            for record in records
+                            for k in record
+                            if k not in ("id", "chunk_text")
+                        }
+                    )
                     self._ensure_namespace_schema(namespace, schema_fields)
                 total_upserted, errors, failed_documents = self._upsert_records(
                     records, namespace
@@ -515,7 +520,7 @@ class PineconeIngestion:
                 error_msg = f"Error upserting batch {batch_num}: {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
-                failed_docs.extend(self._mark_batch_failed(batch, e, i))
+                failed_docs.extend(self._mark_batch_failed(filtered_batch, e, i))
 
         if total_skipped_existing > 0:
             logger.info(
@@ -698,17 +703,39 @@ class PineconeIngestion:
         namespace: Optional[str],
         batch_num: int,
     ) -> None:
-        """Upsert batch to both indexes."""
+        """Upsert batch to both indexes. On sparse failure, rolls back dense to avoid partial state."""
         self._ensure_indexes_ready()
+        record_ids = [r.get("id") for r in records if r.get("id")]
         try:
             self.dense_index.upsert_records(records=records, namespace=namespace)
+        except Exception as e:
+            logger.error(
+                "Failed to upsert batch %s to dense index: %s. Records: %s",
+                batch_num,
+                e,
+                record_ids,
+            )
+            raise
+        try:
             self.sparse_index.upsert_records(records=records, namespace=namespace)
         except Exception as e:
-            record_ids = [r.get("id", "unknown") for r in records]
             logger.error(
-                f"Failed to upsert batch {batch_num} to dense and sparse indexes: {e}. "
-                f"Records: {record_ids}"
+                "Sparse upsert failed for batch %s, rolling back dense upsert: %s",
+                batch_num,
+                e,
             )
+            if record_ids and namespace:
+                try:
+                    self.dense_index.delete(ids=record_ids, namespace=namespace)
+                    logger.info(
+                        "Rolled back %s records from dense index after sparse failure",
+                        len(record_ids),
+                    )
+                except Exception as rollback_e:
+                    logger.error(
+                        "Rollback of dense index failed after sparse upsert error: %s",
+                        rollback_e,
+                    )
             raise
 
     def _update_to_index(
@@ -813,16 +840,23 @@ class PineconeIngestion:
                 )
                 continue
             try:
-                self.dense_index.update(
-                    id=doc_id,
-                    namespace=namespace,
-                    set_metadata=update_metadata,
-                )
-                self.sparse_index.update(
-                    id=doc_id,
-                    namespace=namespace,
-                    set_metadata=update_metadata,
-                )
+                dense_kwargs: Dict[str, Any] = {
+                    "id": doc_id,
+                    "namespace": namespace,
+                    "set_metadata": update_metadata,
+                }
+                sparse_kwargs: Dict[str, Any] = {
+                    "id": doc_id,
+                    "namespace": namespace,
+                    "set_metadata": update_metadata,
+                }
+                if process_type == ProcessType.UPDATE_VALUE_BY_ID:
+                    if record.get("values") is not None:
+                        dense_kwargs["values"] = record["values"]
+                    if record.get("sparse_values") is not None:
+                        sparse_kwargs["sparse_values"] = record["sparse_values"]
+                self.dense_index.update(**dense_kwargs)
+                self.sparse_index.update(**sparse_kwargs)
                 processed += 1
             except Exception as e:
                 error_msg = f"Error updating metadata for id={doc_id}: {e}"
