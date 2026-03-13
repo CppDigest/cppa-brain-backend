@@ -291,7 +291,10 @@ class PineconeIngestion:
 
         schema_payload = {"fields": {f: {"filterable": True} for f in schema_fields}}
 
-        for index in (self.dense_index, self.sparse_index):
+        index_names = (self.config.index_name, f"{self.config.index_name}-sparse")
+        for index, index_name in zip(
+            (self.dense_index, self.sparse_index), index_names, strict=True
+        ):
             if index is None:
                 continue
             try:
@@ -300,12 +303,21 @@ class PineconeIngestion:
                     logger.debug(
                         "Namespace '%s' already exists on index '%s', skipping schema creation",
                         namespace,
-                        getattr(index, "_index_name", "unknown"),
+                        index_name,
                     )
                     continue
 
-                index_host = index._config.host
-                # Strip any scheme prefix — index_host may already be "https://..."
+                index_desc = self.pc.describe_index(name=index_name)
+                index_host = getattr(index_desc, "host", None) or (
+                    index_desc.get("host") if isinstance(index_desc, dict) else None
+                )
+                if not index_host:
+                    logger.warning(
+                        "No host in describe_index for '%s', skipping namespace schema creation",
+                        index_name,
+                    )
+                    continue
+                # Strip any scheme prefix — host may be "https://..." or plain hostname
                 host_clean = index_host.removeprefix("https://").removeprefix("http://")
                 response = requests.post(
                     f"https://{host_clean}/namespaces",
