@@ -490,6 +490,7 @@ class PineconeIngestion:
         batch_start_idxs = list(range(0, len(documents), batch_size))
         for batch_idx, i in enumerate(batch_start_idxs):
             batch = documents[i : i + batch_size]
+            filtered_batch = batch
             batch_num = batch_idx + 1
             try:
                 filtered_batch, skipped_existing = self._filter_existing_records(
